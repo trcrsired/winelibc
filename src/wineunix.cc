@@ -237,7 +237,7 @@ extern "C"
 		return {call(__wine_unix_call_get_std_host_fd, &p), p.host_fd};
 	}
 
-	__WINE_UNIX_API __wine_host_fd_t __wine_unix_at_fdcwd(void) noexcept
+	__WINE_UNIX_API __WINE_UNIX_CONST __wine_host_fd_t __wine_unix_at_fdcwd(void) noexcept
 	{
 		__wine_unix_at_fdcwd_params_t p{0};
 		if (call(__wine_unix_call_at_fdcwd, &p) != __WINE_UNIX_ERRNO_SUCCESS)

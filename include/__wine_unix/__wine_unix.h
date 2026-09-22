@@ -189,7 +189,7 @@ typedef ptrdiff_t __wine_off_t;
 	-3 sentinel fast_io uses for at_fdcwd. 0 remains valid and also means
 	cwd. Infallible; returns 0 only if the dispatcher itself is broken.
 	*/
-	__WINE_UNIX_API __wine_host_fd_t __wine_unix_at_fdcwd(void) __WINE_UNIX_NOEXCEPT;
+	__WINE_UNIX_API __WINE_UNIX_CONST __wine_host_fd_t __wine_unix_at_fdcwd(void) __WINE_UNIX_NOEXCEPT;
 
 #if defined(__cplusplus)
 }
