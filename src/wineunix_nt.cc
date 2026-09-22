@@ -579,7 +579,7 @@ inline __wine_unix_rwv_status_t rwv_split(__wine_unix_status_t status, ::std::si
 		}
 		lastn -= ilen;
 	}
-	return {status, done, baseindex, index};
+	return {status, baseindex, index};
 }
 
 /*
@@ -644,17 +644,17 @@ __wine_unix_rwv_status_t nt_writev_common(__wine_host_fd_t host_fd, __wine_unix_
 {
 	if (iovsize == 0)
 	{
-		return {__WINE_UNIX_ERRNO_SUCCESS, 0, 0, 0};
+		return {__WINE_UNIX_ERRNO_SUCCESS, 0, 0};
 	}
 	void *handle{};
 	if (auto const err{host_fd_to_handle(host_fd, handle)}; err)
 	{
-		return {err, 0, 0, 0};
+		return {err, 0, 0};
 	}
 	::std::size_t const total{rwv_total_size(iovs, iovsize)};
 	if (total == 0)
 	{
-		return {__WINE_UNIX_ERRNO_SUCCESS, 0, iovsize, 0};
+		return {__WINE_UNIX_ERRNO_SUCCESS, iovsize, 0};
 	}
 	rwv_buffer buffer;
 	char const *base{static_cast<char const *>(iovs[0].iov_base)};
@@ -662,7 +662,7 @@ __wine_unix_rwv_status_t nt_writev_common(__wine_host_fd_t host_fd, __wine_unix_
 	{
 		if (buffer.allocate(total) == nullptr)
 		{
-			return {__WINE_UNIX_ERRNO_ENOMEM, 0, 0, 0};
+			return {__WINE_UNIX_ERRNO_ENOMEM, 0, 0};
 		}
 		rwv_copy_in(iovs, iovsize, buffer.ptr);
 		base = buffer.ptr;
@@ -677,17 +677,17 @@ __wine_unix_rwv_status_t nt_readv_common(__wine_host_fd_t host_fd, __wine_unix_i
 {
 	if (iovsize == 0)
 	{
-		return {__WINE_UNIX_ERRNO_SUCCESS, 0, 0, 0};
+		return {__WINE_UNIX_ERRNO_SUCCESS, 0, 0};
 	}
 	void *handle{};
 	if (auto const err{host_fd_to_handle(host_fd, handle)}; err)
 	{
-		return {err, 0, 0, 0};
+		return {err, 0, 0};
 	}
 	::std::size_t const total{rwv_total_size(iovs, iovsize)};
 	if (total == 0)
 	{
-		return {__WINE_UNIX_ERRNO_SUCCESS, 0, iovsize, 0};
+		return {__WINE_UNIX_ERRNO_SUCCESS, iovsize, 0};
 	}
 	rwv_buffer buffer;
 	char *dst{static_cast<char *>(const_cast<void *>(iovs[0].iov_base))};
@@ -695,7 +695,7 @@ __wine_unix_rwv_status_t nt_readv_common(__wine_host_fd_t host_fd, __wine_unix_i
 	{
 		if (buffer.allocate(total) == nullptr)
 		{
-			return {__WINE_UNIX_ERRNO_ENOMEM, 0, 0, 0};
+			return {__WINE_UNIX_ERRNO_ENOMEM, 0, 0};
 		}
 		dst = buffer.ptr;
 	}
@@ -703,7 +703,7 @@ __wine_unix_rwv_status_t nt_readv_common(__wine_host_fd_t host_fd, __wine_unix_i
 	auto const st{nt_transfer(handle, dst, total, offp, false, done)};
 	if (st != __WINE_UNIX_ERRNO_SUCCESS)
 	{
-		return {st, 0, 0, 0};
+		return {st, 0, 0};
 	}
 	if (iovsize != 1 && done != 0)
 	{
@@ -790,6 +790,16 @@ extern "C"
 	__WINE_UNIX_API __wine_unix_host_fd_status_t
 	__wine_unix_nt_handle_to_host_fd_returns_status(ptrdiff_t handle) noexcept
 	{
+		return ::winelibc_nt::nt_nt_handle_to_host_fd(handle);
+	}
+
+	__WINE_UNIX_API __wine_unix_host_fd_status_t
+	__wine_unix_nt_handle_to_host_fd_ref_returns_status(ptrdiff_t handle) noexcept
+	{
+		if (handle == 0)
+		{
+			return {__WINE_UNIX_ERRNO_SUCCESS, 0}; /* null handle -> empty host_fd */
+		}
 		return ::winelibc_nt::nt_nt_handle_to_host_fd(handle);
 	}
 
@@ -898,6 +908,16 @@ extern "C"
 		return r.host_fd;
 	}
 
+	__WINE_UNIX_API __wine_host_fd_t __wine_unix_nt_handle_to_host_fd_ref(ptrdiff_t handle) return_failure{__wine_unix_errc}
+	{
+		auto const r{__wine_unix_nt_handle_to_host_fd_ref_returns_status(handle)};
+		if (r.status != __WINE_UNIX_ERRNO_SUCCESS)
+		{
+			return_failure static_cast<__wine_unix_errc>(r.status);
+		}
+		return r.host_fd;
+	}
+
 	__WINE_UNIX_API __wine_host_fd_t __wine_unix_openat(__wine_host_fd_t host_dirfd, char const *filename,
 														size_t filenamelen, __wine_host_flags_t flags,
 														__wine_host_mode_t mode) return_failure{__wine_unix_errc}
@@ -927,7 +947,7 @@ extern "C"
 		{
 			return_failure static_cast<__wine_unix_errc>(r.status);
 		}
-		return {r.total, r.baseindex, r.index};
+		return {r.baseindex, r.index};
 	}
 
 	__WINE_UNIX_API __wine_unix_rwv_result_t __wine_unix_readv(__wine_host_fd_t host_fd,
@@ -939,7 +959,7 @@ extern "C"
 		{
 			return_failure static_cast<__wine_unix_errc>(r.status);
 		}
-		return {r.total, r.baseindex, r.index};
+		return {r.baseindex, r.index};
 	}
 
 	__WINE_UNIX_API __wine_unix_rwv_result_t __wine_unix_pwritev(__wine_host_fd_t host_fd,
@@ -952,7 +972,7 @@ extern "C"
 		{
 			return_failure static_cast<__wine_unix_errc>(r.status);
 		}
-		return {r.total, r.baseindex, r.index};
+		return {r.baseindex, r.index};
 	}
 
 	__WINE_UNIX_API __wine_unix_rwv_result_t __wine_unix_preadv(__wine_host_fd_t host_fd,
@@ -965,7 +985,7 @@ extern "C"
 		{
 			return_failure static_cast<__wine_unix_errc>(r.status);
 		}
-		return {r.total, r.baseindex, r.index};
+		return {r.baseindex, r.index};
 	}
 
 	__WINE_UNIX_API __wine_unix_rw_result_t __wine_unix_write(__wine_host_fd_t host_fd, void const *buf,

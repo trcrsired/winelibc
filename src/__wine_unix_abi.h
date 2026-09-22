@@ -121,7 +121,6 @@ extern "C"
 		__wine_host_fd_t host_fd;
 		__wine_unix_iovec_t const *iovs;
 		size_t iovsize;
-		size_t total;     /* output: bytes transferred */
 		size_t baseindex; /* output: iovec index the transfer stopped at */
 		size_t index;     /* output: bytes consumed within that iovec */
 	} __wine_unix_readwritev_params;
@@ -132,7 +131,6 @@ extern "C"
 		__wine_unix_iovec_t const *iovs;
 		size_t iovsize;
 		__wine_off_t offset;
-		size_t total;     /* output */
 		size_t baseindex; /* output */
 		size_t index;     /* output */
 	} __wine_unix_preadwritev_params;
@@ -210,7 +208,6 @@ extern "C"
 		__wine_unix_ptr32_t host_fd;
 		__wine_unix_ptr32_t iovs;
 		uint32_t iovsize;
-		uint32_t total;
 		uint32_t baseindex;
 		uint32_t index;
 	} __wine_unix_readwritev_params32;
@@ -221,7 +218,6 @@ extern "C"
 		__wine_unix_ptr32_t iovs;
 		uint32_t iovsize;
 		__wine_off_t offset;
-		uint32_t total;
 		uint32_t baseindex;
 		uint32_t index;
 	} __wine_unix_preadwritev_params32;

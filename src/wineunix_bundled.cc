@@ -85,7 +85,6 @@ __wine_unix_status_t nt_op_writev(void *args) noexcept
 {
 	auto *p{static_cast<__wine_unix_readwritev_params_t *>(args)};
 	auto const r{::winelibc_nt::nt_writev(p->host_fd, p->iovs, p->iovsize)};
-	p->total = r.total;
 	p->baseindex = r.baseindex;
 	p->index = r.index;
 	return r.status;
@@ -95,7 +94,6 @@ __wine_unix_status_t nt_op_readv(void *args) noexcept
 {
 	auto *p{static_cast<__wine_unix_readwritev_params_t *>(args)};
 	auto const r{::winelibc_nt::nt_readv(p->host_fd, p->iovs, p->iovsize)};
-	p->total = r.total;
 	p->baseindex = r.baseindex;
 	p->index = r.index;
 	return r.status;
@@ -105,7 +103,6 @@ __wine_unix_status_t nt_op_pwritev(void *args) noexcept
 {
 	auto *p{static_cast<__wine_unix_preadwritev_params_t *>(args)};
 	auto const r{::winelibc_nt::nt_pwritev(p->host_fd, p->iovs, p->iovsize, p->offset)};
-	p->total = r.total;
 	p->baseindex = r.baseindex;
 	p->index = r.index;
 	return r.status;
@@ -115,7 +112,6 @@ __wine_unix_status_t nt_op_preadv(void *args) noexcept
 {
 	auto *p{static_cast<__wine_unix_preadwritev_params_t *>(args)};
 	auto const r{::winelibc_nt::nt_preadv(p->host_fd, p->iovs, p->iovsize, p->offset)};
-	p->total = r.total;
 	p->baseindex = r.baseindex;
 	p->index = r.index;
 	return r.status;

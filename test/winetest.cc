@@ -34,7 +34,7 @@ int main()
 	__wine_unix_iovec_t iov[3]{{a, 6}, {b, 5}, {c, 5}};
 #if defined(__HERBCEPTIONS__)
 	auto w{catch return_failure(__wine_unix_writev(op.host_fd, iov, 3))};
-	if (w.failed || w.value.total != 16)
+	if (w.failed || w.value.baseindex != 3 || w.value.index != 0)
 	{
 		return 1;
 	}
@@ -46,7 +46,7 @@ int main()
 	}
 #else
 	auto w{__wine_unix_writev_returns_status(op.host_fd, iov, 3)};
-	if (w.status != __WINE_UNIX_ERRNO_SUCCESS || w.total != 16)
+	if (w.status != __WINE_UNIX_ERRNO_SUCCESS || w.baseindex != 3 || w.index != 0)
 	{
 		return 1;
 	}
@@ -69,7 +69,7 @@ int main()
 	char buf[32]{};
 	__wine_unix_iovec_t riov{buf, sizeof(buf) - 1};
 	auto r{__wine_unix_readv_returns_status(op.host_fd, &riov, 1)};
-	if (r.status != __WINE_UNIX_ERRNO_SUCCESS || r.total != 16 ||
+	if (r.status != __WINE_UNIX_ERRNO_SUCCESS || r.baseindex != 0 || r.index != 16 ||
 		std::memcmp(buf, "hello unix side\n", 16) != 0)
 	{
 		return 1;
@@ -79,7 +79,7 @@ int main()
 	char x[6]{}, y[11]{};
 	__wine_unix_iovec_t riovs[2]{{x, 6}, {y, 10}};
 	auto pr{__wine_unix_preadv_returns_status(op.host_fd, riovs, 2, 0)};
-	if (pr.status != __WINE_UNIX_ERRNO_SUCCESS || pr.total != 16 ||
+	if (pr.status != __WINE_UNIX_ERRNO_SUCCESS || pr.baseindex != 2 || pr.index != 0 ||
 		std::memcmp(x, "hello ", 6) != 0 || std::memcmp(y, "unix side\n", 10) != 0)
 	{
 		return 1;

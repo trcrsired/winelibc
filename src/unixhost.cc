@@ -150,14 +150,13 @@ inline c_path_malloc_guard c_path_common(char const *filename, size_t filenamele
 }
 
 inline __wine_unix_status_t readwritev_result_common_split(ssize_t ret, __wine_unix_iovec_t const *iovs, size_t iovsize,
-														   size_t &total, size_t &baseindex, size_t &index) noexcept
+														   size_t &baseindex, size_t &index) noexcept
 {
 	if (ret == -1)
 	{
 		return host_errno_to_wine_errno(errno);
 	}
 	size_t uret{static_cast<size_t>(ret)};
-	total = uret;
 	baseindex = 0;
 	index = 0;
 	if (iovsize)
@@ -207,11 +206,9 @@ inline __wine_unix_status_t readwritev_common(__wine_unix_readwritev_params_t *p
 	}
 	__wine_unix_iovec_t const *const iovs{iovs_from_params(*params)};
 	auto ret = fn(unix_fd, reinterpret_cast<struct iovec const *>(iovs), static_cast<int>(iovsize));
-	size_t total{};
 	size_t baseindex{};
 	size_t index{};
-	auto const errcode{readwritev_result_common_split(ret, iovs, iovsize, total, baseindex, index)};
-	params->total = static_cast<decltype(params->total)>(total);
+	auto const errcode{readwritev_result_common_split(ret, iovs, iovsize, baseindex, index)};
 	params->baseindex = static_cast<decltype(params->baseindex)>(baseindex);
 	params->index = static_cast<decltype(params->index)>(index);
 	return errcode;
@@ -248,11 +245,9 @@ inline __wine_unix_status_t preadwritev_common(__wine_unix_preadwritev_params_t 
 	}
 	__wine_unix_iovec_t const *const iovs{iovs_from_params(*params)};
 	auto ret = fn(unix_fd, reinterpret_cast<struct iovec const *>(iovs), static_cast<int>(iovsize));
-	size_t total{};
 	size_t baseindex{};
 	size_t index{};
-	auto const errcode{readwritev_result_common_split(ret, iovs, iovsize, total, baseindex, index)};
-	params->total = static_cast<decltype(params->total)>(total);
+	auto const errcode{readwritev_result_common_split(ret, iovs, iovsize, baseindex, index)};
 	params->baseindex = static_cast<decltype(params->baseindex)>(baseindex);
 	params->index = static_cast<decltype(params->index)>(index);
 	return errcode;
@@ -564,7 +559,6 @@ static __wine_unix_status_t wow64_readwritev_common(void *args, bool write) noex
 	params.iovs = reinterpret_cast<__wine_unix_iovec_t const *>(iovs);
 	params.iovsize = iovsize;
 	auto const errcode{write ? unix_writev(&params) : unix_readv(&params)};
-	params32->total = static_cast<uint32_t>(params.total);
 	params32->baseindex = static_cast<uint32_t>(params.baseindex);
 	params32->index = static_cast<uint32_t>(params.index);
 	free(iovs);
@@ -606,7 +600,6 @@ static __wine_unix_status_t wow64_preadwritev_common(void *args, bool write) noe
 	params.iovs = reinterpret_cast<__wine_unix_iovec_t const *>(iovs);
 	params.iovsize = iovsize;
 	auto const errcode{write ? unix_pwritev(&params) : unix_preadv(&params)};
-	params32->total = static_cast<uint32_t>(params.total);
 	params32->baseindex = static_cast<uint32_t>(params.baseindex);
 	params32->index = static_cast<uint32_t>(params.index);
 	free(iovs);

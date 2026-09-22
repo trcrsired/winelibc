@@ -108,10 +108,14 @@ typedef ptrdiff_t __wine_off_t;
 		ptrdiff_t handle;
 	} __wine_unix_nt_handle_status_t;
 
+	/*
+	vectored results report where the transfer stopped: baseindex = iovec it
+	stopped at, index = bytes consumed within it. the byte total is derivable
+	from the caller's iovecs (and can overflow size_t) — not marshalled.
+	*/
 	typedef struct
 	{
 		__wine_unix_status_t status;
-		size_t total;
 		size_t baseindex;
 		size_t index;
 	} __wine_unix_rwv_status_t;
@@ -119,7 +123,6 @@ typedef ptrdiff_t __wine_off_t;
 	/* success-side value of the vectored calls. */
 	typedef struct
 	{
-		size_t total;
 		size_t baseindex;
 		size_t index;
 	} __wine_unix_rwv_result_t;
@@ -142,9 +145,16 @@ typedef ptrdiff_t __wine_off_t;
 	host_fd <-> HANDLE conversions TRANSFER ownership: on success the source is
 	consumed (caller must not use or close it) and the result is owned by the
 	caller. On failure the source's state is unspecified — do not close it.
+
+	__wine_unix_nt_handle_to_host_fd_ref is the NON-consuming direction for
+	observer-style views: the handle stays owned by the caller. On the unixcall
+	impl the returned host_fd is a fresh wineserver fd the caller owns — free
+	it with __wine_unix_close or it lives until process exit. On the nt impl
+	it aliases the same handle — never close it.
 	*/
 	__WINE_UNIX_API __wine_unix_nt_handle_status_t __wine_unix_host_fd_to_nt_handle_returns_status(__wine_host_fd_t host_fd) __WINE_UNIX_NOEXCEPT;
 	__WINE_UNIX_API __wine_unix_host_fd_status_t __wine_unix_nt_handle_to_host_fd_returns_status(ptrdiff_t handle) __WINE_UNIX_NOEXCEPT;
+	__WINE_UNIX_API __wine_unix_host_fd_status_t __wine_unix_nt_handle_to_host_fd_ref_returns_status(ptrdiff_t handle) __WINE_UNIX_NOEXCEPT;
 
 	__WINE_UNIX_API __wine_unix_host_fd_status_t __wine_unix_openat_returns_status(__wine_host_fd_t host_dirfd,
 																				   char const *filename,
@@ -193,54 +203,66 @@ typedef ptrdiff_t __wine_off_t;
 
 #if defined(__cplusplus)
 }
+#endif
 
 /*
-the errc enum exists for every c++ consumer: std::wine_errc when herbceptions
-is in play, otherwise an empty enum class so code can still name the type and
-cast status values to it.
+the errc enum exists for every consumer: std::wine_errc under c++
+herbceptions, otherwise an unscoped enum fixed to uint32 so the same type
+names the error domain from c and c++ (c has no empty enums, hence one
+enumerator there).
 */
+#if defined(__cplusplus)
 #if defined(__HERBCEPTIONS__) && __has_include(<herbceptions/error>)
 #include <herbceptions/error>
 using __wine_unix_errc = ::std::wine_errc;
 #else
-enum class __wine_unix_errc : uint_least32_t
+enum __wine_unix_errc : uint_least32_t
 {
 };
 #endif
-
+/* c needs the enum tag spelling; c++ resolves the plain name either way */
+#define __WINE_UNIX_ERRC_T __wine_unix_errc
 extern "C"
 {
+#elif defined(__HERBCEPTIONS__)
+enum __wine_unix_errc : uint_least32_t
+{
+	__wine_unix_errc_ok = 0
+};
+#define __WINE_UNIX_ERRC_T enum __wine_unix_errc
+#endif
+
 #if defined(__HERBCEPTIONS__)
-	__WINE_UNIX_API int __wine_unix_host_fd_to_unix_fd(__wine_host_fd_t host_fd) return_failure { __wine_unix_errc };
-	__WINE_UNIX_API __wine_host_fd_t __wine_unix_unix_fd_to_host_fd(int unix_fd) return_failure { __wine_unix_errc };
-	__WINE_UNIX_API ptrdiff_t __wine_unix_host_fd_to_nt_handle(__wine_host_fd_t host_fd) return_failure { __wine_unix_errc };
-	__WINE_UNIX_API __wine_host_fd_t __wine_unix_nt_handle_to_host_fd(ptrdiff_t handle) return_failure { __wine_unix_errc };
+	__WINE_UNIX_API int __wine_unix_host_fd_to_unix_fd(__wine_host_fd_t host_fd) return_failure { __WINE_UNIX_ERRC_T };
+	__WINE_UNIX_API __wine_host_fd_t __wine_unix_unix_fd_to_host_fd(int unix_fd) return_failure { __WINE_UNIX_ERRC_T };
+	__WINE_UNIX_API ptrdiff_t __wine_unix_host_fd_to_nt_handle(__wine_host_fd_t host_fd) return_failure { __WINE_UNIX_ERRC_T };
+	__WINE_UNIX_API __wine_host_fd_t __wine_unix_nt_handle_to_host_fd(ptrdiff_t handle) return_failure { __WINE_UNIX_ERRC_T };
+	__WINE_UNIX_API __wine_host_fd_t __wine_unix_nt_handle_to_host_fd_ref(ptrdiff_t handle) return_failure { __WINE_UNIX_ERRC_T };
 
 	__WINE_UNIX_API __wine_host_fd_t __wine_unix_openat(__wine_host_fd_t host_dirfd, char const *filename,
 														size_t filenamelen, __wine_host_flags_t flags,
-														__wine_host_mode_t mode) return_failure { __wine_unix_errc };
-	__WINE_UNIX_API void __wine_unix_close(__wine_host_fd_t host_fd) return_failure { __wine_unix_errc };
+														__wine_host_mode_t mode) return_failure { __WINE_UNIX_ERRC_T };
+	__WINE_UNIX_API void __wine_unix_close(__wine_host_fd_t host_fd) return_failure { __WINE_UNIX_ERRC_T };
 	__WINE_UNIX_API __wine_unix_rwv_result_t __wine_unix_writev(__wine_host_fd_t host_fd,
 																__wine_unix_iovec_t const *iovs,
-																size_t iovsize) return_failure { __wine_unix_errc };
+																size_t iovsize) return_failure { __WINE_UNIX_ERRC_T };
 	__WINE_UNIX_API __wine_unix_rwv_result_t __wine_unix_readv(__wine_host_fd_t host_fd,
 															   __wine_unix_iovec_t const *iovs,
-															   size_t iovsize) return_failure { __wine_unix_errc };
+															   size_t iovsize) return_failure { __WINE_UNIX_ERRC_T };
 	__WINE_UNIX_API __wine_unix_rwv_result_t __wine_unix_pwritev(__wine_host_fd_t host_fd,
 																 __wine_unix_iovec_t const *iovs,
 																 size_t iovsize,
-																 __wine_off_t offset) return_failure { __wine_unix_errc };
+																 __wine_off_t offset) return_failure { __WINE_UNIX_ERRC_T };
 	__WINE_UNIX_API __wine_unix_rwv_result_t __wine_unix_preadv(__wine_host_fd_t host_fd,
 																__wine_unix_iovec_t const *iovs,
 																size_t iovsize,
-																__wine_off_t offset) return_failure { __wine_unix_errc };
+																__wine_off_t offset) return_failure { __WINE_UNIX_ERRC_T };
 	__WINE_UNIX_API __wine_unix_rw_result_t __wine_unix_write(__wine_host_fd_t host_fd, void const *buf,
-															  size_t len) return_failure { __wine_unix_errc };
+															  size_t len) return_failure { __WINE_UNIX_ERRC_T };
 	__WINE_UNIX_API __wine_unix_rw_result_t __wine_unix_read(__wine_host_fd_t host_fd, void *buf,
-															 size_t len) return_failure { __wine_unix_errc };
+															 size_t len) return_failure { __WINE_UNIX_ERRC_T };
 	__WINE_UNIX_API __WINE_UNIX_CONST __wine_host_fd_t
-	__wine_unix_get_std_host_fd(int which) return_failure { __wine_unix_errc };
-#endif
+	__wine_unix_get_std_host_fd(int which) return_failure { __WINE_UNIX_ERRC_T };
 #endif
 
 #ifdef __cplusplus
