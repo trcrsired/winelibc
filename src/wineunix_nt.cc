@@ -86,10 +86,6 @@ extern "C"
 													  uint32_t length, int64_t *byte_offset,
 													  uint32_t *key) noexcept;
 	__declspec(dllimport) int32_t __stdcall NtClose(void *handle) noexcept;
-	__declspec(dllimport) int32_t __stdcall NtDuplicateObject(void *source_process, void *source_handle,
-															void *target_process, void **target_handle,
-															uint32_t desired_access, uint32_t attributes,
-															uint32_t options) noexcept;
 	__declspec(dllimport) void *__stdcall RtlAllocateHeap(void *heap, uint32_t flags, uintptr_t size) noexcept;
 	__declspec(dllimport) int __stdcall RtlFreeHeap(void *heap, uint32_t flags, void *ptr) noexcept;
 	__declspec(dllimport) void *__stdcall RtlGetCurrentPeb() noexcept;
@@ -311,40 +307,23 @@ __wine_unix_host_fd_status_t nt_unix_fd_to_host_fd(int unix_fd) noexcept
 }
 
 /*
-conversions hand out independently-owned references: nt impl duplicates through
-NtDuplicateObject, unixcall impl gets a fresh handle/fd from the wineserver —
-either way the caller owns the result and the source stays owned by its holder.
+conversions transfer ownership: on the nt impl a host_fd already IS the HANDLE,
+so both directions are just re-encodings — no dup. (The unixcall impl consumes
+too: the wineserver keeps its own fd via SCM_RIGHTS, and handle->fd closes the
+source handle on the PE side.)
 */
-constexpr uint32_t nt_duplicate_same_access{0x00000002};
-constexpr uint32_t nt_duplicate_same_attributes{0x00000004};
-
-inline void *nt_dup(void *handle, __wine_unix_status_t &err) noexcept
-{
-	void *dup{};
-	auto const status{NtDuplicateObject(reinterpret_cast<void *>(static_cast<intptr_t>(-1)), handle,
-										reinterpret_cast<void *>(static_cast<intptr_t>(-1)), &dup,
-										0, 0, nt_duplicate_same_access | nt_duplicate_same_attributes)};
-	err = ntstatus_to_wine_errno(status);
-	return dup;
-}
 
 __wine_unix_nt_handle_status_t nt_host_fd_to_nt_handle(__wine_host_fd_t host_fd) noexcept
 {
 	void *handle{};
-	if (auto const err{host_fd_to_handle(host_fd, handle)}; err)
-	{
-		return {err, 0};
-	}
-	__wine_unix_status_t err{};
-	auto *dup{nt_dup(handle, err)};
-	return {err, static_cast<ptrdiff_t>(reinterpret_cast<::std::uintptr_t>(dup))};
+	auto const err{host_fd_to_handle(host_fd, handle)};
+	return {err, static_cast<ptrdiff_t>(reinterpret_cast<::std::uintptr_t>(handle))};
 }
 
 __wine_unix_host_fd_status_t nt_nt_handle_to_host_fd(ptrdiff_t handle) noexcept
 {
-	__wine_unix_status_t err{};
-	auto *dup{nt_dup(reinterpret_cast<void *>(static_cast<::std::uintptr_t>(handle)), err)};
-	return {err, handle_to_host_fd(dup)};
+	return {__WINE_UNIX_ERRNO_SUCCESS,
+			handle_to_host_fd(reinterpret_cast<void *>(static_cast<::std::uintptr_t>(handle)))};
 }
 
 /*

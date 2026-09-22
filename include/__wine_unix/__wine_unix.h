@@ -138,6 +138,11 @@ extern "C"
 
 	__WINE_UNIX_API __wine_unix_unix_fd_status_t __wine_unix_host_fd_to_unix_fd_returns_status(__wine_host_fd_t host_fd) __WINE_UNIX_NOEXCEPT;
 	__WINE_UNIX_API __wine_unix_host_fd_status_t __wine_unix_unix_fd_to_host_fd_returns_status(int unix_fd) __WINE_UNIX_NOEXCEPT;
+	/*
+	host_fd <-> HANDLE conversions TRANSFER ownership: on success the source is
+	consumed (caller must not use or close it) and the result is owned by the
+	caller. On failure the source's state is unspecified — do not close it.
+	*/
 	__WINE_UNIX_API __wine_unix_nt_handle_status_t __wine_unix_host_fd_to_nt_handle_returns_status(__wine_host_fd_t host_fd) __WINE_UNIX_NOEXCEPT;
 	__WINE_UNIX_API __wine_unix_host_fd_status_t __wine_unix_nt_handle_to_host_fd_returns_status(ptrdiff_t handle) __WINE_UNIX_NOEXCEPT;
 

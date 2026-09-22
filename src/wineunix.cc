@@ -56,6 +56,7 @@ extern "C"
 														  unicode_string *name, void **handle) noexcept;
 	__declspec(dllimport) int32_t __stdcall LdrGetProcedureAddress(void *handle, ansi_string const *name,
 																 uint32_t ordinal, void **proc) noexcept;
+	__declspec(dllimport) int32_t __stdcall NtClose(void *handle) noexcept;
 }
 
 constexpr uint32_t memory_wine_load_unix_lib_by_name{1002};
@@ -143,7 +144,13 @@ extern "C"
 	__wine_unix_nt_handle_to_host_fd_returns_status(ptrdiff_t handle) noexcept
 	{
 		__wine_unix_nt_handle_to_host_fd_params_t p{handle, 0};
-		return {call(__wine_unix_call_nt_handle_to_host_fd, &p), p.host_fd};
+		auto const status{call(__wine_unix_call_nt_handle_to_host_fd, &p)};
+		if (!status)
+		{
+			/* conversion consumed the handle — the unix side dup'd it to a fresh fd */
+			NtClose(reinterpret_cast<void *>(static_cast<uintptr_t>(handle)));
+		}
+		return {status, p.host_fd};
 	}
 
 	__WINE_UNIX_API __wine_unix_host_fd_status_t

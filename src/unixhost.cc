@@ -309,6 +309,8 @@ static __wine_unix_status_t unix_host_fd_to_nt_handle(void *args) noexcept
 	{
 		return __WINE_UNIX_ERRNO_EBADF;
 	}
+	/* the wineserver holds its own fd via SCM_RIGHTS — close ours: the conversion consumed host_fd */
+	::close(unix_fd);
 	params->handle = static_cast<ptrdiff_t>(reinterpret_cast<uintptr_t>(handle));
 	return __WINE_UNIX_ERRNO_SUCCESS;
 }
@@ -493,6 +495,8 @@ static __wine_unix_status_t wow64_unix_host_fd_to_nt_handle(void *args) noexcept
 	{
 		return __WINE_UNIX_ERRNO_EBADF;
 	}
+	/* the wineserver holds its own fd via SCM_RIGHTS — close ours: the conversion consumed host_fd */
+	::close(unix_fd);
 	params->handle = static_cast<int32_t>(reinterpret_cast<uintptr_t>(handle));
 	return __WINE_UNIX_ERRNO_SUCCESS;
 }
