@@ -17,8 +17,10 @@ project(winelibc CXX)
 # ---------------------------------------------------------------------------
 
 option(WINELIBC_UNIXLIB "build the host unixlib (libwineunix.so)" ON)
-option(WINELIBC_WINEUNIX_DLL "build the PE wineunix.dll variants + PE test exe" OFF)
+option(WINELIBC_WINEUNIX_DLL "build the PE wineunix.dll variants" OFF)
 option(WINELIBC_IMPORT_LIB "generate libwineunix.a with llvm-dlltool" ON)
+option(WINELIBC_TEST "build the PE test exes (needs WINELIBC_WINEUNIX_DLL + WINELIBC_IMPORT_LIB)" OFF)
+option(WINELIBC_FAST_IO_TEST "build the fast_io wine layer test (needs fast_io headers)" OFF)
 
 # The PE side is compiled by a separate windows-targeting driver, not the
 # project compiler. Point these at whatever clang cfg you use.
@@ -30,6 +32,19 @@ set(WINELIBC_DLLTOOL "llvm-dlltool" CACHE FILEPATH "llvm-dlltool for import-lib 
 set(WINELIBC_WINE "wine" CACHE FILEPATH "wine binary for the check target")
 set(WINELIBC_FAST_IO_INCLUDE "${CMAKE_CURRENT_SOURCE_DIR}/../fast_io/include"
 	CACHE PATH "fast_io include dir for the fast_io wine layer test")
+
+if(WINELIBC_FAST_IO_TEST AND NOT EXISTS "${WINELIBC_FAST_IO_INCLUDE}/fast_io.h")
+	message(WARNING "WINELIBC_FAST_IO_TEST is on but ${WINELIBC_FAST_IO_INCLUDE}/fast_io.h "
+		"does not exist; disabling (set WINELIBC_FAST_IO_INCLUDE)")
+	set(WINELIBC_FAST_IO_TEST OFF)
+endif()
+
+if((WINELIBC_TEST OR WINELIBC_FAST_IO_TEST) AND NOT (WINELIBC_WINEUNIX_DLL AND WINELIBC_IMPORT_LIB))
+	message(WARNING "test exes link libwineunix.a next to a wineunix.dll; "
+		"enabling WINELIBC_WINEUNIX_DLL and WINELIBC_IMPORT_LIB")
+	set(WINELIBC_WINEUNIX_DLL ON)
+	set(WINELIBC_IMPORT_LIB ON)
+endif()
 
 if(WINELIBC_UNIXLIB)
 	if(WIN32)
@@ -71,50 +86,56 @@ if(WINELIBC_WINEUNIX_DLL)
 		DEPENDS src/wineunix_nt.cc ${WINELIBC_ABI_HEADERS}
 		COMMENT "PE dll: nt/wineunix.dll (ntdll forwarding)")
 
-	# identical test exe next to each dll; the sibling wineunix.dll wins
-	add_custom_command(OUTPUT ${CMAKE_BINARY_DIR}/unixcall/winetest.exe
-		COMMAND ${WINELIBC_PE_CXX} ${WINELIBC_PE_CXXFLAGS_LIST} -fherbceptions
-			-o ${CMAKE_BINARY_DIR}/unixcall/winetest.exe
-			${CMAKE_CURRENT_SOURCE_DIR}/test/winetest.cc
-			-I${CMAKE_CURRENT_SOURCE_DIR}/include ${CMAKE_BINARY_DIR}/libwineunix.a -lherbceptions
-		DEPENDS test/winetest.cc ${CMAKE_BINARY_DIR}/libwineunix.a ${WINELIBC_ABI_HEADERS}
-		COMMENT "PE exe: unixcall/winetest.exe")
-
-	add_custom_command(OUTPUT ${CMAKE_BINARY_DIR}/nt/winetest.exe
-		COMMAND ${WINELIBC_PE_CXX} ${WINELIBC_PE_CXXFLAGS_LIST} -fherbceptions
-			-o ${CMAKE_BINARY_DIR}/nt/winetest.exe
-			${CMAKE_CURRENT_SOURCE_DIR}/test/winetest.cc
-			-I${CMAKE_CURRENT_SOURCE_DIR}/include ${CMAKE_BINARY_DIR}/libwineunix.a -lherbceptions
-		DEPENDS test/winetest.cc ${CMAKE_BINARY_DIR}/libwineunix.a ${WINELIBC_ABI_HEADERS}
-		COMMENT "PE exe: nt/winetest.exe")
-
-	# fast_io wine layer test: fast_io.h + platforms/wine/wine.h over the flat api
-	add_custom_command(OUTPUT ${CMAKE_BINARY_DIR}/unixcall/fast_io_winetest.exe
-		COMMAND ${WINELIBC_PE_CXX} ${WINELIBC_PE_CXXFLAGS_LIST} -fherbceptions
-			-o ${CMAKE_BINARY_DIR}/unixcall/fast_io_winetest.exe
-			${CMAKE_CURRENT_SOURCE_DIR}/test/fast_io_winetest.cc
-			-I${CMAKE_CURRENT_SOURCE_DIR}/include -I${WINELIBC_FAST_IO_INCLUDE}
-			${CMAKE_BINARY_DIR}/libwineunix.a -lherbceptions
-		DEPENDS test/fast_io_winetest.cc ${CMAKE_BINARY_DIR}/libwineunix.a ${WINELIBC_ABI_HEADERS}
-			${WINELIBC_FAST_IO_INCLUDE}/fast_io_hosted/platforms/wine/wine.h
-		COMMENT "PE exe: unixcall/fast_io_winetest.exe")
-
-	add_custom_command(OUTPUT ${CMAKE_BINARY_DIR}/nt/fast_io_winetest.exe
-		COMMAND ${WINELIBC_PE_CXX} ${WINELIBC_PE_CXXFLAGS_LIST} -fherbceptions
-			-o ${CMAKE_BINARY_DIR}/nt/fast_io_winetest.exe
-			${CMAKE_CURRENT_SOURCE_DIR}/test/fast_io_winetest.cc
-			-I${CMAKE_CURRENT_SOURCE_DIR}/include -I${WINELIBC_FAST_IO_INCLUDE}
-			${CMAKE_BINARY_DIR}/libwineunix.a -lherbceptions
-		DEPENDS test/fast_io_winetest.cc ${CMAKE_BINARY_DIR}/libwineunix.a ${WINELIBC_ABI_HEADERS}
-			${WINELIBC_FAST_IO_INCLUDE}/fast_io_hosted/platforms/wine/wine.h
-		COMMENT "PE exe: nt/fast_io_winetest.exe")
-
 	add_custom_target(wineunix_dlls ALL
 		DEPENDS ${CMAKE_BINARY_DIR}/unixcall/wineunix.dll ${CMAKE_BINARY_DIR}/nt/wineunix.dll)
-	add_custom_target(winetest ALL
-		DEPENDS ${CMAKE_BINARY_DIR}/unixcall/winetest.exe ${CMAKE_BINARY_DIR}/nt/winetest.exe)
-	add_custom_target(fast_io_winetest ALL
-		DEPENDS ${CMAKE_BINARY_DIR}/unixcall/fast_io_winetest.exe ${CMAKE_BINARY_DIR}/nt/fast_io_winetest.exe)
+
+	if(WINELIBC_TEST)
+		# identical test exe next to each dll; the sibling wineunix.dll wins
+		add_custom_command(OUTPUT ${CMAKE_BINARY_DIR}/unixcall/winetest.exe
+			COMMAND ${WINELIBC_PE_CXX} ${WINELIBC_PE_CXXFLAGS_LIST} -fherbceptions
+				-o ${CMAKE_BINARY_DIR}/unixcall/winetest.exe
+				${CMAKE_CURRENT_SOURCE_DIR}/test/winetest.cc
+				-I${CMAKE_CURRENT_SOURCE_DIR}/include ${CMAKE_BINARY_DIR}/libwineunix.a -lherbceptions
+			DEPENDS test/winetest.cc ${CMAKE_BINARY_DIR}/libwineunix.a ${WINELIBC_ABI_HEADERS}
+			COMMENT "PE exe: unixcall/winetest.exe")
+
+		add_custom_command(OUTPUT ${CMAKE_BINARY_DIR}/nt/winetest.exe
+			COMMAND ${WINELIBC_PE_CXX} ${WINELIBC_PE_CXXFLAGS_LIST} -fherbceptions
+				-o ${CMAKE_BINARY_DIR}/nt/winetest.exe
+				${CMAKE_CURRENT_SOURCE_DIR}/test/winetest.cc
+				-I${CMAKE_CURRENT_SOURCE_DIR}/include ${CMAKE_BINARY_DIR}/libwineunix.a -lherbceptions
+			DEPENDS test/winetest.cc ${CMAKE_BINARY_DIR}/libwineunix.a ${WINELIBC_ABI_HEADERS}
+			COMMENT "PE exe: nt/winetest.exe")
+
+		add_custom_target(winetest ALL
+			DEPENDS ${CMAKE_BINARY_DIR}/unixcall/winetest.exe ${CMAKE_BINARY_DIR}/nt/winetest.exe)
+	endif()
+
+	if(WINELIBC_FAST_IO_TEST)
+		# fast_io wine layer test: fast_io.h + platforms/wine/wine.h over the flat api
+		add_custom_command(OUTPUT ${CMAKE_BINARY_DIR}/unixcall/fast_io_winetest.exe
+			COMMAND ${WINELIBC_PE_CXX} ${WINELIBC_PE_CXXFLAGS_LIST} -fherbceptions
+				-o ${CMAKE_BINARY_DIR}/unixcall/fast_io_winetest.exe
+				${CMAKE_CURRENT_SOURCE_DIR}/test/fast_io_winetest.cc
+				-I${CMAKE_CURRENT_SOURCE_DIR}/include -I${WINELIBC_FAST_IO_INCLUDE}
+				${CMAKE_BINARY_DIR}/libwineunix.a -lherbceptions
+			DEPENDS test/fast_io_winetest.cc ${CMAKE_BINARY_DIR}/libwineunix.a ${WINELIBC_ABI_HEADERS}
+				${WINELIBC_FAST_IO_INCLUDE}/fast_io_hosted/platforms/wine/wine.h
+			COMMENT "PE exe: unixcall/fast_io_winetest.exe")
+
+		add_custom_command(OUTPUT ${CMAKE_BINARY_DIR}/nt/fast_io_winetest.exe
+			COMMAND ${WINELIBC_PE_CXX} ${WINELIBC_PE_CXXFLAGS_LIST} -fherbceptions
+				-o ${CMAKE_BINARY_DIR}/nt/fast_io_winetest.exe
+				${CMAKE_CURRENT_SOURCE_DIR}/test/fast_io_winetest.cc
+				-I${CMAKE_CURRENT_SOURCE_DIR}/include -I${WINELIBC_FAST_IO_INCLUDE}
+				${CMAKE_BINARY_DIR}/libwineunix.a -lherbceptions
+			DEPENDS test/fast_io_winetest.cc ${CMAKE_BINARY_DIR}/libwineunix.a ${WINELIBC_ABI_HEADERS}
+				${WINELIBC_FAST_IO_INCLUDE}/fast_io_hosted/platforms/wine/wine.h
+			COMMENT "PE exe: nt/fast_io_winetest.exe")
+
+		add_custom_target(fast_io_winetest ALL
+			DEPENDS ${CMAKE_BINARY_DIR}/unixcall/fast_io_winetest.exe ${CMAKE_BINARY_DIR}/nt/fast_io_winetest.exe)
+	endif()
 endif()
 
 if(WINELIBC_IMPORT_LIB)
@@ -127,23 +148,27 @@ if(WINELIBC_IMPORT_LIB)
 	add_custom_target(wineunix_import ALL DEPENDS ${CMAKE_BINARY_DIR}/libwineunix.a)
 endif()
 
-# wine unixcall/winetest.exe -> unixcall dll -> libwineunix.so (via WINEDLLPATH)
-# wine nt/winetest.exe       -> nt dll -> ntdll
-if(WINELIBC_UNIXLIB AND WINELIBC_WINEUNIX_DLL AND WINELIBC_IMPORT_LIB)
+# wine unixcall/*.exe -> unixcall dll -> libwineunix.so (via WINEDLLPATH)
+# wine nt/*.exe       -> nt dll -> ntdll
+if(WINELIBC_UNIXLIB AND WINELIBC_WINEUNIX_DLL AND WINELIBC_IMPORT_LIB
+		AND (WINELIBC_TEST OR WINELIBC_FAST_IO_TEST))
+	set(WINELIBC_CHECK_COMMANDS)
+	set(WINELIBC_CHECK_DEPS wineunix wineunix_dlls)
+	foreach(subdir unixcall nt)
+		foreach(testexe winetest fast_io_winetest)
+			if((testexe STREQUAL "winetest" AND WINELIBC_TEST)
+					OR (testexe STREQUAL "fast_io_winetest" AND WINELIBC_FAST_IO_TEST))
+				list(APPEND WINELIBC_CHECK_COMMANDS
+					COMMAND ${CMAKE_COMMAND} -E env
+						WINEDLLPATH=${CMAKE_BINARY_DIR}
+						${WINELIBC_WINE} ${CMAKE_BINARY_DIR}/${subdir}/${testexe}.exe)
+				list(APPEND WINELIBC_CHECK_DEPS ${testexe})
+			endif()
+		endforeach()
+	endforeach()
 	add_custom_target(check
-		COMMAND ${CMAKE_COMMAND} -E env
-			WINEDLLPATH=${CMAKE_BINARY_DIR}
-			${WINELIBC_WINE} ${CMAKE_BINARY_DIR}/unixcall/winetest.exe
-		COMMAND ${CMAKE_COMMAND} -E env
-			WINEDLLPATH=${CMAKE_BINARY_DIR}
-			${WINELIBC_WINE} ${CMAKE_BINARY_DIR}/nt/winetest.exe
-		COMMAND ${CMAKE_COMMAND} -E env
-			WINEDLLPATH=${CMAKE_BINARY_DIR}
-			${WINELIBC_WINE} ${CMAKE_BINARY_DIR}/unixcall/fast_io_winetest.exe
-		COMMAND ${CMAKE_COMMAND} -E env
-			WINEDLLPATH=${CMAKE_BINARY_DIR}
-			${WINELIBC_WINE} ${CMAKE_BINARY_DIR}/nt/fast_io_winetest.exe
-		DEPENDS wineunix wineunix_dlls winetest fast_io_winetest
+		${WINELIBC_CHECK_COMMANDS}
+		DEPENDS ${WINELIBC_CHECK_DEPS}
 		WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
-		COMMENT "running winetest + fast_io_winetest under wine (unixcall + nt)")
+		COMMENT "running test exes under wine (unixcall + nt)")
 endif()
