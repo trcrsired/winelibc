@@ -69,8 +69,24 @@ int main()
 	char buf[32]{};
 	__wine_unix_iovec_t riov{buf, sizeof(buf) - 1};
 	auto r{__wine_unix_readv_returns_status(op.host_fd, &riov, 1)};
-	bool const ok{r.status == __WINE_UNIX_ERRNO_SUCCESS &&
-				  __wine_unix_close_returns_status(op.host_fd) == __WINE_UNIX_ERRNO_SUCCESS &&
-				  r.total == 16 && std::memcmp(buf, "hello unix side\n", 16) == 0};
-	return ok ? 0 : 1;
+	if (r.status != __WINE_UNIX_ERRNO_SUCCESS || r.total != 16 ||
+		std::memcmp(buf, "hello unix side\n", 16) != 0)
+	{
+		return 1;
+	}
+
+	/* multi-iovec preadv scatters one read across two buffers */
+	char x[6]{}, y[11]{};
+	__wine_unix_iovec_t riovs[2]{{x, 6}, {y, 10}};
+	auto pr{__wine_unix_preadv_returns_status(op.host_fd, riovs, 2, 0)};
+	if (pr.status != __WINE_UNIX_ERRNO_SUCCESS || pr.total != 16 ||
+		std::memcmp(x, "hello ", 6) != 0 || std::memcmp(y, "unix side\n", 10) != 0)
+	{
+		return 1;
+	}
+	if (__wine_unix_close_returns_status(op.host_fd) != __WINE_UNIX_ERRNO_SUCCESS)
+	{
+		return 1;
+	}
+	return 0;
 }

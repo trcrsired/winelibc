@@ -76,12 +76,16 @@ extern "C"
 													  uint32_t length, int64_t *byte_offset,
 													  uint32_t *key) noexcept;
 	__declspec(dllimport) int32_t __stdcall NtClose(void *handle) noexcept;
+	__declspec(dllimport) void *__stdcall RtlAllocateHeap(void *heap, uint32_t flags, uintptr_t size) noexcept;
+	__declspec(dllimport) int __stdcall RtlFreeHeap(void *heap, uint32_t flags, void *ptr) noexcept;
 	__declspec(dllimport) void __stdcall RtlInitUnicodeString(unicode_string *dst,
 															char16_t const *src) noexcept;
 	__declspec(dllimport) int32_t __stdcall LdrGetDllHandle(char16_t const *path, uint32_t *characteristics,
 														  unicode_string *name, void **handle) noexcept;
 	__declspec(dllimport) int32_t __stdcall LdrGetProcedureAddress(void *handle, ansi_string const *name,
 																 uint32_t ordinal, void **proc) noexcept;
+	/* intrinsic, not an import — declared here instead of pulling in intrin.h */
+	unsigned long long __readgsqword(unsigned long offset) noexcept;
 }
 
 constexpr uint32_t nt_status_success{0};
@@ -128,6 +132,9 @@ constexpr uint32_t status_file_is_a_directory{0xC00000BA};
 constexpr uint32_t status_name_too_long{0xC0000106};
 constexpr uint32_t status_disk_full{0xC000007F};
 constexpr uint32_t status_insufficient_resources{0xC000009A};
+/* read-side EOF statuses: a short/empty result, not an error */
+constexpr uint32_t status_end_of_file{0xC0000011};
+constexpr uint32_t status_pipe_broken{0xC000014B};
 
 inline __wine_unix_status_t ntstatus_to_wine_errno(int32_t status) noexcept
 {
@@ -412,83 +419,243 @@ __wine_unix_status_t nt_close(__wine_host_fd_t host_fd) noexcept
 	return ntstatus_to_wine_errno(NtClose(handle));
 }
 
-template <bool Write>
-__wine_unix_rwv_status_t readwritev_common(__wine_host_fd_t host_fd, __wine_unix_iovec_t const *iovs,
-										   ::std::size_t iovsize, int64_t const *byte_offset) noexcept
+/*
+readv/writev carry POSIX read_some/write_some semantics: one NtReadFile /
+NtWriteFile per call, like the single unix syscall they emulate. NT has no
+general vectored file I/O (NtReadFileScatter/NtWriteFileGather require
+FILE_NO_INTERMEDIATE_BUFFERING handles), so calls with more than one iovec are
+gathered/scattered through one process-heap buffer — the RtlAllocateHeap
+staging fast_io uses for its nt/win32 scatter buffer logic.
+*/
+
+inline void *process_heap() noexcept
 {
-	__wine_unix_rwv_status_t r{__WINE_UNIX_ERRNO_SUCCESS, 0, 0, 0};
+	/* TEB::ProcessEnvironmentBlock (0x60) -> PEB::ProcessHeap (0x30) */
+	auto const *teb{reinterpret_cast<char const *>(__readgsqword(0x30))};
+	auto const *peb{*reinterpret_cast<char *const *>(teb + 0x60)};
+	return *reinterpret_cast<void *const *>(peb + 0x30);
+}
+
+struct rwv_buffer
+{
+	char *ptr{};
+	rwv_buffer() noexcept = default;
+	rwv_buffer(rwv_buffer const &) = delete;
+	rwv_buffer &operator=(rwv_buffer const &) = delete;
+	~rwv_buffer()
+	{
+		if (ptr != nullptr)
+		{
+			RtlFreeHeap(process_heap(), 0, ptr);
+		}
+	}
+	char *allocate(::std::size_t n) noexcept
+	{
+		ptr = static_cast<char *>(RtlAllocateHeap(process_heap(), 0, n));
+		return ptr;
+	}
+};
+
+/* overflow-clamped total iov length */
+inline ::std::size_t rwv_total_size(__wine_unix_iovec_t const *iovs, ::std::size_t n) noexcept
+{
+	::std::size_t total{};
+	for (::std::size_t i{}; i != n; ++i)
+	{
+		auto const ilen{iovs[i].iov_len};
+		if (SIZE_MAX - ilen < total)
+		{
+			break;
+		}
+		total += ilen;
+	}
+	return total;
+}
+
+inline void rwv_copy_in(__wine_unix_iovec_t const *iovs, ::std::size_t n, char *dst) noexcept
+{
+	for (::std::size_t i{}; i != n; ++i)
+	{
+		auto const len{iovs[i].iov_len};
+		if (len != 0)
+		{
+			__builtin_memcpy(dst, iovs[i].iov_base, len);
+			dst += len;
+		}
+	}
+}
+
+inline void rwv_copy_out(char const *src, __wine_unix_iovec_t const *iovs, ::std::size_t n,
+						 ::std::size_t done) noexcept
+{
+	for (::std::size_t i{}; i != n && done != 0; ++i)
+	{
+		auto copied{iovs[i].iov_len};
+		if (done < copied)
+		{
+			copied = done;
+		}
+		if (copied != 0)
+		{
+			__builtin_memcpy(const_cast<void *>(iovs[i].iov_base), src, copied);
+			src += copied;
+			done -= copied;
+		}
+	}
+}
+
+/* splits a flat byte count into {baseindex, index}, like the unix-side split */
+inline __wine_unix_rwv_status_t rwv_split(__wine_unix_status_t status, ::std::size_t done,
+										  __wine_unix_iovec_t const *iovs, ::std::size_t n) noexcept
+{
+	::std::size_t baseindex{}, index{}, lastn{done};
+	for (; baseindex != n; ++baseindex)
+	{
+		auto const ilen{iovs[baseindex].iov_len};
+		if (lastn < ilen)
+		{
+			index = lastn;
+			break;
+		}
+		lastn -= ilen;
+	}
+	return {status, done, baseindex, index};
+}
+
+/*
+One transfer = one NtReadFile/NtWriteFile of up to len bytes at buf. offp is
+the caller's ByteOffset for the p-variants (nullptr otherwise); nonnegative
+offsets get the pre-call overflow check, negative ones (-1/-2 special
+positions) pass through unmodified, matching fast_io's thunk.
+*/
+__wine_unix_status_t nt_transfer(void *handle, void *buf, ::std::size_t len, int64_t *offp,
+								 bool write, ::std::size_t &done) noexcept
+{
+	done = 0;
+	uint32_t const request{len < 0x100000000uz ? static_cast<uint32_t>(len) : 0xFFFFFFFFu};
+	if (offp != nullptr && 0 <= *offp)
+	{
+		int64_t nxt;
+		if (__builtin_add_overflow(*offp, static_cast<int64_t>(request), __builtin_addressof(nxt)))
+		{
+			return __WINE_UNIX_ERRNO_EOVERFLOW;
+		}
+	}
+	io_status_block iosb{};
+	auto const st{write ? NtWriteFile(handle, nullptr, nullptr, nullptr, __builtin_addressof(iosb),
+									  buf, request, offp, nullptr)
+						: NtReadFile(handle, nullptr, nullptr, nullptr, __builtin_addressof(iosb),
+									 buf, request, offp, nullptr)};
+	if (st != 0)
+	{
+		auto const ust{static_cast<uint32_t>(st)};
+		if (!write && (ust == status_end_of_file || ust == status_pipe_broken))
+		{
+			return __WINE_UNIX_ERRNO_SUCCESS;
+		}
+		return ntstatus_to_wine_errno(st);
+	}
+	done = static_cast<::std::size_t>(iosb.Information);
+	return __WINE_UNIX_ERRNO_SUCCESS;
+}
+
+__wine_unix_rwv_status_t nt_writev_common(__wine_host_fd_t host_fd, __wine_unix_iovec_t const *iovs,
+										  ::std::size_t iovsize, int64_t *offp) noexcept
+{
+	if (iovsize == 0)
+	{
+		return {__WINE_UNIX_ERRNO_SUCCESS, 0, 0, 0};
+	}
 	void *handle{};
 	if (auto const err{host_fd_to_handle(host_fd, handle)}; err)
 	{
-		r.status = err;
-		return r;
+		return {err, 0, 0, 0};
 	}
-	for (::std::size_t i{}; i != iovsize; ++i)
+	::std::size_t const total{rwv_total_size(iovs, iovsize)};
+	if (total == 0)
 	{
-		auto const ilen{static_cast<::std::size_t>(iovs[i].iov_len)};
-		if (ilen == 0)
-		{
-			continue;
-		}
-		auto *const base{reinterpret_cast<void *>(const_cast<char *>(static_cast<char const *>(iovs[i].iov_base)))};
-		io_status_block iosb{};
-		int64_t off{};
-		int64_t *offp{nullptr};
-		if (byte_offset != nullptr)
-		{
-			off = *byte_offset + static_cast<int64_t>(r.total);
-			offp = &off;
-		}
-		auto const status{Write ? NtWriteFile(handle, nullptr, nullptr, nullptr, &iosb, base,
-											static_cast<uint32_t>(ilen), offp, nullptr)
-								: NtReadFile(handle, nullptr, nullptr, nullptr, &iosb, base,
-											 static_cast<uint32_t>(ilen), offp, nullptr)};
-		if (status)
-		{
-			r.status = ntstatus_to_wine_errno(status);
-			break;
-		}
-		auto const done{static_cast<::std::size_t>(iosb.Information)};
-		r.total += done;
-		if (done < ilen)
-		{
-			r.baseindex = i;
-			r.index = done;
-			return r;
-		}
+		return {__WINE_UNIX_ERRNO_SUCCESS, 0, iovsize, 0};
 	}
-	if (r.status == __WINE_UNIX_ERRNO_SUCCESS)
+	rwv_buffer buffer;
+	char const *base{static_cast<char const *>(iovs[0].iov_base)};
+	if (iovsize != 1)
 	{
-		r.baseindex = iovsize;
-		r.index = 0;
+		if (buffer.allocate(total) == nullptr)
+		{
+			return {__WINE_UNIX_ERRNO_ENOMEM, 0, 0, 0};
+		}
+		rwv_copy_in(iovs, iovsize, buffer.ptr);
+		base = buffer.ptr;
 	}
-	return r;
+	::std::size_t done{};
+	auto const st{nt_transfer(handle, const_cast<char *>(base), total, offp, true, done)};
+	return rwv_split(st, done, iovs, iovsize);
+}
+
+__wine_unix_rwv_status_t nt_readv_common(__wine_host_fd_t host_fd, __wine_unix_iovec_t const *iovs,
+										 ::std::size_t iovsize, int64_t *offp) noexcept
+{
+	if (iovsize == 0)
+	{
+		return {__WINE_UNIX_ERRNO_SUCCESS, 0, 0, 0};
+	}
+	void *handle{};
+	if (auto const err{host_fd_to_handle(host_fd, handle)}; err)
+	{
+		return {err, 0, 0, 0};
+	}
+	::std::size_t const total{rwv_total_size(iovs, iovsize)};
+	if (total == 0)
+	{
+		return {__WINE_UNIX_ERRNO_SUCCESS, 0, iovsize, 0};
+	}
+	rwv_buffer buffer;
+	char *dst{static_cast<char *>(const_cast<void *>(iovs[0].iov_base))};
+	if (iovsize != 1)
+	{
+		if (buffer.allocate(total) == nullptr)
+		{
+			return {__WINE_UNIX_ERRNO_ENOMEM, 0, 0, 0};
+		}
+		dst = buffer.ptr;
+	}
+	::std::size_t done{};
+	auto const st{nt_transfer(handle, dst, total, offp, false, done)};
+	if (st != __WINE_UNIX_ERRNO_SUCCESS)
+	{
+		return {st, 0, 0, 0};
+	}
+	if (iovsize != 1 && done != 0)
+	{
+		rwv_copy_out(buffer.ptr, iovs, iovsize, done);
+	}
+	return rwv_split(__WINE_UNIX_ERRNO_SUCCESS, done, iovs, iovsize);
 }
 
 __wine_unix_rwv_status_t nt_writev(__wine_host_fd_t host_fd, __wine_unix_iovec_t const *iovs,
 								   ::std::size_t iovsize) noexcept
 {
-	return readwritev_common<true>(host_fd, iovs, iovsize, nullptr);
+	return nt_writev_common(host_fd, iovs, iovsize, nullptr);
 }
 
 __wine_unix_rwv_status_t nt_readv(__wine_host_fd_t host_fd, __wine_unix_iovec_t const *iovs,
 								  ::std::size_t iovsize) noexcept
 {
-	return readwritev_common<false>(host_fd, iovs, iovsize, nullptr);
+	return nt_readv_common(host_fd, iovs, iovsize, nullptr);
 }
 
 __wine_unix_rwv_status_t nt_pwritev(__wine_host_fd_t host_fd, __wine_unix_iovec_t const *iovs,
 									::std::size_t iovsize, __wine_off_t offset) noexcept
 {
-	auto const off{static_cast<int64_t>(offset)};
-	return readwritev_common<true>(host_fd, iovs, iovsize, &off);
+	auto off{static_cast<int64_t>(offset)};
+	return nt_writev_common(host_fd, iovs, iovsize, __builtin_addressof(off));
 }
 
 __wine_unix_rwv_status_t nt_preadv(__wine_host_fd_t host_fd, __wine_unix_iovec_t const *iovs,
 								   ::std::size_t iovsize, __wine_off_t offset) noexcept
 {
-	auto const off{static_cast<int64_t>(offset)};
-	return readwritev_common<false>(host_fd, iovs, iovsize, &off);
+	auto off{static_cast<int64_t>(offset)};
+	return nt_readv_common(host_fd, iovs, iovsize, __builtin_addressof(off));
 }
 
 } // namespace
