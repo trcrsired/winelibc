@@ -174,25 +174,25 @@ if(WINELIBC_UNIXLIB AND WINELIBC_WINEUNIX_DLL AND WINELIBC_IMPORT_LIB
 endif()
 
 # ---------------------------------------------------------------------------
-# install. Three destinations, each overridable:
-#   headers  -> WINELIBC_INSTALL_INCLUDE_DIR  (<prefix>/include)
-#   PE side  -> WINELIBC_INSTALL_WINDOWS_DIR  (<prefix>/bin):
-#               unixcall/wineunix.dll, nt/wineunix.dll, libwineunix.a
-#   unixlib  -> WINELIBC_INSTALL_UNIX_DIR     (<prefix>/lib): libwineunix.so —
-#               point it at wine's unixlib dir (e.g. lib/wine/x86_64-unix) or
-#               any WINEDLLPATH dir when running under emulation; on a real
-#               windows toolchain only the first two matter.
+# install. The cmake host target is usually linux, so the default layout is:
+#   <prefix>/lib/libwineunix.so                      (unix side)
+#   <prefix>/share/wineunix/                         (windows-side prefix)
+#       include/__wine_unix/*.h
+#       lib/libwineunix.a                            (PE import lib)
+#       bin/unixcall/wineunix.dll
+#       bin/nt/wineunix.dll
+# WINELIBC_INSTALL_WINDOWS_DIR and WINELIBC_INSTALL_UNIX_DIR override the two
+# roots — e.g. point the unix dir at wine's unixlib dir (lib/wine/x86_64-unix)
+# or any WINEDLLPATH dir when running under emulation.
 # ---------------------------------------------------------------------------
 include(GNUInstallDirs)
 
-set(WINELIBC_INSTALL_INCLUDE_DIR "${CMAKE_INSTALL_INCLUDEDIR}"
-	CACHE PATH "install dir for the __wine_unix headers")
-set(WINELIBC_INSTALL_WINDOWS_DIR "${CMAKE_INSTALL_BINDIR}"
-	CACHE PATH "install dir for the PE wineunix.dll variants and the import lib")
+set(WINELIBC_INSTALL_WINDOWS_DIR "${CMAKE_INSTALL_DATADIR}/wineunix"
+	CACHE PATH "windows-side install prefix (bin/ dlls, lib/ import lib, include/ headers)")
 set(WINELIBC_INSTALL_UNIX_DIR "${CMAKE_INSTALL_LIBDIR}"
 	CACHE PATH "install dir for libwineunix.so (a wine unixlib/WINEDLLPATH dir)")
 
-install(DIRECTORY include/__wine_unix DESTINATION ${WINELIBC_INSTALL_INCLUDE_DIR})
+install(DIRECTORY include/__wine_unix DESTINATION ${WINELIBC_INSTALL_WINDOWS_DIR}/include)
 
 if(TARGET wineunix)
 	install(TARGETS wineunix LIBRARY DESTINATION ${WINELIBC_INSTALL_UNIX_DIR})
@@ -200,12 +200,12 @@ endif()
 
 if(WINELIBC_WINEUNIX_DLL)
 	install(FILES ${CMAKE_BINARY_DIR}/unixcall/wineunix.dll
-		DESTINATION ${WINELIBC_INSTALL_WINDOWS_DIR}/unixcall)
+		DESTINATION ${WINELIBC_INSTALL_WINDOWS_DIR}/bin/unixcall)
 	install(FILES ${CMAKE_BINARY_DIR}/nt/wineunix.dll
-		DESTINATION ${WINELIBC_INSTALL_WINDOWS_DIR}/nt)
+		DESTINATION ${WINELIBC_INSTALL_WINDOWS_DIR}/bin/nt)
 endif()
 
 if(WINELIBC_IMPORT_LIB)
 	install(FILES ${CMAKE_BINARY_DIR}/libwineunix.a
-		DESTINATION ${WINELIBC_INSTALL_WINDOWS_DIR})
+		DESTINATION ${WINELIBC_INSTALL_WINDOWS_DIR}/lib)
 endif()
