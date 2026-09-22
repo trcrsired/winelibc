@@ -365,9 +365,4 @@ extern "C"
 	}
 
 #endif
-
-	__declspec(dllexport) int __stdcall DllMain(void *, uint32_t, void *) noexcept
-	{
-		return 1;
-	}
 }
