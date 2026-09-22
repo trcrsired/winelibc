@@ -59,7 +59,7 @@ if(WINELIBC_UNIXLIB)
 	if(WIN32)
 		message(FATAL_ERROR "WINELIBC_UNIXLIB requires a unix host compiler")
 	endif()
-	add_library(wineunix SHARED src/unixhost.cc)
+	add_library(wineunix SHARED src/unixhost.cc src/unixhost_errno.cc)
 	set_target_properties(wineunix PROPERTIES
 		PREFIX "lib" CXX_STANDARD 20 CXX_STANDARD_REQUIRED ON
 		POSITION_INDEPENDENT_CODE ON)

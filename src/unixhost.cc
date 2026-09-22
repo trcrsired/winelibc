@@ -41,6 +41,16 @@ static wine_server_handle_to_fd_t *wine_server_handle_to_fd_p;
 
 namespace __wine_unix
 {
+#if defined(__linux__)
+/* linux errno values already match the ones in __wine_unix_errno.h */
+inline __wine_unix_status_t host_errno_to_wine_errno(int val) noexcept
+{
+	return static_cast<__wine_unix_status_t>(val);
+}
+#else
+__wine_unix_status_t host_errno_to_wine_errno(int) noexcept;
+#endif
+
 namespace
 {
 
@@ -90,15 +100,6 @@ inline __wine_host_fd_t unix_fd_to_host_fd(int unix_fd) noexcept
 		return 0;
 	}
 	return static_cast<__wine_host_fd_t>(unix_fd) + 1;
-}
-
-inline __wine_unix_status_t host_errno_to_wine_errno(int val) noexcept
-{
-	/*
-	Todo: proper per-platform mapping. On linux the values already match
-	the ones in __wine_unix_errno.h.
-	*/
-	return static_cast<__wine_unix_status_t>(val);
 }
 
 struct c_path_malloc_guard
