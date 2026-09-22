@@ -115,7 +115,7 @@ struct
 	::std::uint_least32_t LoaderFlags;
 	::std::uint_least32_t NumberOfRvaAndSizes;
 	::__wine_unix::image_data_directory DataDirectory[::__wine_unix::image_numberof_directory_entries]; /* 0x60 */
-	/* 0xE0 */
+																										/* 0xE0 */
 };
 
 template <typename T>

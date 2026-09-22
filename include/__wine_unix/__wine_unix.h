@@ -61,13 +61,13 @@ extern "C"
 	typedef uint_least32_t __wine_host_fd_t;
 	typedef uint_least32_t __wine_errno_t;
 #else
-	typedef size_t __wine_host_fd_t;
-	typedef size_t __wine_errno_t;
+typedef size_t __wine_host_fd_t;
+typedef size_t __wine_errno_t;
 #endif
 #if INTPTR_MAX < INT_LEAST64_MAX
 	typedef int_least64_t __wine_off_t;
 #else
-	typedef ptrdiff_t __wine_off_t;
+typedef ptrdiff_t __wine_off_t;
 #endif
 
 	typedef __wine_host_fd_t __wine_host_flags_t;
@@ -147,33 +147,33 @@ extern "C"
 	__WINE_UNIX_API __wine_unix_host_fd_status_t __wine_unix_nt_handle_to_host_fd_returns_status(ptrdiff_t handle) __WINE_UNIX_NOEXCEPT;
 
 	__WINE_UNIX_API __wine_unix_host_fd_status_t __wine_unix_openat_returns_status(__wine_host_fd_t host_dirfd,
-																				  char const *filename,
-																				  size_t filenamelen,
-																				  __wine_host_flags_t flags,
-																				  __wine_host_mode_t mode) __WINE_UNIX_NOEXCEPT;
+																				   char const *filename,
+																				   size_t filenamelen,
+																				   __wine_host_flags_t flags,
+																				   __wine_host_mode_t mode) __WINE_UNIX_NOEXCEPT;
 	__WINE_UNIX_API __wine_unix_status_t __wine_unix_close_returns_status(__wine_host_fd_t host_fd) __WINE_UNIX_NOEXCEPT;
 	__WINE_UNIX_API __wine_unix_rwv_status_t __wine_unix_writev_returns_status(__wine_host_fd_t host_fd,
+																			   __wine_unix_iovec_t const *iovs,
+																			   size_t iovsize) __WINE_UNIX_NOEXCEPT;
+	__WINE_UNIX_API __wine_unix_rwv_status_t __wine_unix_readv_returns_status(__wine_host_fd_t host_fd,
 																			  __wine_unix_iovec_t const *iovs,
 																			  size_t iovsize) __WINE_UNIX_NOEXCEPT;
-	__WINE_UNIX_API __wine_unix_rwv_status_t __wine_unix_readv_returns_status(__wine_host_fd_t host_fd,
-																			 __wine_unix_iovec_t const *iovs,
-																			 size_t iovsize) __WINE_UNIX_NOEXCEPT;
 	__WINE_UNIX_API __wine_unix_rwv_status_t __wine_unix_pwritev_returns_status(__wine_host_fd_t host_fd,
+																				__wine_unix_iovec_t const *iovs,
+																				size_t iovsize,
+																				__wine_off_t offset) __WINE_UNIX_NOEXCEPT;
+	__WINE_UNIX_API __wine_unix_rwv_status_t __wine_unix_preadv_returns_status(__wine_host_fd_t host_fd,
 																			   __wine_unix_iovec_t const *iovs,
 																			   size_t iovsize,
 																			   __wine_off_t offset) __WINE_UNIX_NOEXCEPT;
-	__WINE_UNIX_API __wine_unix_rwv_status_t __wine_unix_preadv_returns_status(__wine_host_fd_t host_fd,
-																			  __wine_unix_iovec_t const *iovs,
-																			  size_t iovsize,
-																			  __wine_off_t offset) __WINE_UNIX_NOEXCEPT;
 
 	/* plain read/write: read_some/write_some semantics, one host op. */
 	__WINE_UNIX_API __wine_unix_rw_status_t __wine_unix_write_returns_status(__wine_host_fd_t host_fd,
-																			void const *buf,
-																			size_t len) __WINE_UNIX_NOEXCEPT;
+																			 void const *buf,
+																			 size_t len) __WINE_UNIX_NOEXCEPT;
 	__WINE_UNIX_API __wine_unix_rw_status_t __wine_unix_read_returns_status(__wine_host_fd_t host_fd,
-																		   void *buf,
-																		   size_t len) __WINE_UNIX_NOEXCEPT;
+																			void *buf,
+																			size_t len) __WINE_UNIX_NOEXCEPT;
 
 	/*
 	std streams: which is 0 stdin, 1 stdout, 2 stderr. unixcall impl returns
@@ -181,7 +181,7 @@ extern "C"
 	Error} handle from PEB->ProcessParameters.
 	*/
 	__WINE_UNIX_API __WINE_UNIX_CONST __wine_unix_host_fd_status_t
-		__wine_unix_get_std_host_fd_returns_status(int which) __WINE_UNIX_NOEXCEPT;
+	__wine_unix_get_std_host_fd_returns_status(int which) __WINE_UNIX_NOEXCEPT;
 
 #if defined(__cplusplus)
 }
@@ -203,35 +203,35 @@ enum class __wine_unix_errc : uint_least32_t
 extern "C"
 {
 #if defined(__HERBCEPTIONS__)
-	__WINE_UNIX_API int __wine_unix_host_fd_to_unix_fd(__wine_host_fd_t host_fd) return_failure{__wine_unix_errc};
-	__WINE_UNIX_API __wine_host_fd_t __wine_unix_unix_fd_to_host_fd(int unix_fd) return_failure{__wine_unix_errc};
-	__WINE_UNIX_API ptrdiff_t __wine_unix_host_fd_to_nt_handle(__wine_host_fd_t host_fd) return_failure{__wine_unix_errc};
-	__WINE_UNIX_API __wine_host_fd_t __wine_unix_nt_handle_to_host_fd(ptrdiff_t handle) return_failure{__wine_unix_errc};
+	__WINE_UNIX_API int __wine_unix_host_fd_to_unix_fd(__wine_host_fd_t host_fd) return_failure { __wine_unix_errc };
+	__WINE_UNIX_API __wine_host_fd_t __wine_unix_unix_fd_to_host_fd(int unix_fd) return_failure { __wine_unix_errc };
+	__WINE_UNIX_API ptrdiff_t __wine_unix_host_fd_to_nt_handle(__wine_host_fd_t host_fd) return_failure { __wine_unix_errc };
+	__WINE_UNIX_API __wine_host_fd_t __wine_unix_nt_handle_to_host_fd(ptrdiff_t handle) return_failure { __wine_unix_errc };
 
 	__WINE_UNIX_API __wine_host_fd_t __wine_unix_openat(__wine_host_fd_t host_dirfd, char const *filename,
 														size_t filenamelen, __wine_host_flags_t flags,
-														__wine_host_mode_t mode) return_failure{__wine_unix_errc};
-	__WINE_UNIX_API void __wine_unix_close(__wine_host_fd_t host_fd) return_failure{__wine_unix_errc};
+														__wine_host_mode_t mode) return_failure { __wine_unix_errc };
+	__WINE_UNIX_API void __wine_unix_close(__wine_host_fd_t host_fd) return_failure { __wine_unix_errc };
 	__WINE_UNIX_API __wine_unix_rwv_result_t __wine_unix_writev(__wine_host_fd_t host_fd,
 																__wine_unix_iovec_t const *iovs,
-																size_t iovsize) return_failure{__wine_unix_errc};
+																size_t iovsize) return_failure { __wine_unix_errc };
 	__WINE_UNIX_API __wine_unix_rwv_result_t __wine_unix_readv(__wine_host_fd_t host_fd,
 															   __wine_unix_iovec_t const *iovs,
-															   size_t iovsize) return_failure{__wine_unix_errc};
+															   size_t iovsize) return_failure { __wine_unix_errc };
 	__WINE_UNIX_API __wine_unix_rwv_result_t __wine_unix_pwritev(__wine_host_fd_t host_fd,
 																 __wine_unix_iovec_t const *iovs,
 																 size_t iovsize,
-																 __wine_off_t offset) return_failure{__wine_unix_errc};
+																 __wine_off_t offset) return_failure { __wine_unix_errc };
 	__WINE_UNIX_API __wine_unix_rwv_result_t __wine_unix_preadv(__wine_host_fd_t host_fd,
 																__wine_unix_iovec_t const *iovs,
 																size_t iovsize,
-																__wine_off_t offset) return_failure{__wine_unix_errc};
+																__wine_off_t offset) return_failure { __wine_unix_errc };
 	__WINE_UNIX_API __wine_unix_rw_result_t __wine_unix_write(__wine_host_fd_t host_fd, void const *buf,
-															size_t len) return_failure{__wine_unix_errc};
+															  size_t len) return_failure { __wine_unix_errc };
 	__WINE_UNIX_API __wine_unix_rw_result_t __wine_unix_read(__wine_host_fd_t host_fd, void *buf,
-														   size_t len) return_failure{__wine_unix_errc};
+															 size_t len) return_failure { __wine_unix_errc };
 	__WINE_UNIX_API __WINE_UNIX_CONST __wine_host_fd_t
-		__wine_unix_get_std_host_fd(int which) return_failure{__wine_unix_errc};
+	__wine_unix_get_std_host_fd(int which) return_failure { __wine_unix_errc };
 #endif
 #endif
 

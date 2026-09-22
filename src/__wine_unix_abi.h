@@ -120,9 +120,9 @@ extern "C"
 		__wine_host_fd_t host_fd;
 		__wine_unix_iovec_t const *iovs;
 		size_t iovsize;
-		size_t total;	  /* output: bytes transferred */
+		size_t total;     /* output: bytes transferred */
 		size_t baseindex; /* output: iovec index the transfer stopped at */
-		size_t index;	  /* output: bytes consumed within that iovec */
+		size_t index;     /* output: bytes consumed within that iovec */
 	} __wine_unix_readwritev_params;
 
 	typedef struct
@@ -131,23 +131,23 @@ extern "C"
 		__wine_unix_iovec_t const *iovs;
 		size_t iovsize;
 		__wine_off_t offset;
-		size_t total;	  /* output */
+		size_t total;     /* output */
 		size_t baseindex; /* output */
-		size_t index;	  /* output */
+		size_t index;     /* output */
 	} __wine_unix_preadwritev_params;
 
 	typedef struct
 	{
-		int which;				  /* 0 stdin, 1 stdout, 2 stderr */
+		int which;                /* 0 stdin, 1 stdout, 2 stderr */
 		__wine_host_fd_t host_fd; /* output */
 	} __wine_unix_get_std_host_fd_params;
 
 	typedef struct
 	{
 		__wine_host_fd_t host_fd;
-		void *buf;		 /* write casts it to void const * */
+		void *buf; /* write casts it to void const * */
 		size_t len;
-		size_t total;	 /* output: bytes transferred */
+		size_t total; /* output: bytes transferred */
 	} __wine_unix_readwrite_params;
 
 	/*
@@ -243,16 +243,16 @@ extern "C"
 	typedef __wine_unix_get_std_host_fd_params32 __wine_unix_get_std_host_fd_params_t;
 	typedef __wine_unix_readwrite_params32 __wine_unix_readwrite_params_t;
 #else
-	typedef __wine_unix_host_fd_to_unix_fd_params __wine_unix_host_fd_to_unix_fd_params_t;
-	typedef __wine_unix_unix_fd_to_host_fd_params __wine_unix_unix_fd_to_host_fd_params_t;
-	typedef __wine_unix_host_fd_to_nt_handle_params __wine_unix_host_fd_to_nt_handle_params_t;
-	typedef __wine_unix_nt_handle_to_host_fd_params __wine_unix_nt_handle_to_host_fd_params_t;
-	typedef __wine_unix_openat_params __wine_unix_openat_params_t;
-	typedef __wine_unix_close_params __wine_unix_close_params_t;
-	typedef __wine_unix_readwritev_params __wine_unix_readwritev_params_t;
-	typedef __wine_unix_preadwritev_params __wine_unix_preadwritev_params_t;
-	typedef __wine_unix_get_std_host_fd_params __wine_unix_get_std_host_fd_params_t;
-	typedef __wine_unix_readwrite_params __wine_unix_readwrite_params_t;
+typedef __wine_unix_host_fd_to_unix_fd_params __wine_unix_host_fd_to_unix_fd_params_t;
+typedef __wine_unix_unix_fd_to_host_fd_params __wine_unix_unix_fd_to_host_fd_params_t;
+typedef __wine_unix_host_fd_to_nt_handle_params __wine_unix_host_fd_to_nt_handle_params_t;
+typedef __wine_unix_nt_handle_to_host_fd_params __wine_unix_nt_handle_to_host_fd_params_t;
+typedef __wine_unix_openat_params __wine_unix_openat_params_t;
+typedef __wine_unix_close_params __wine_unix_close_params_t;
+typedef __wine_unix_readwritev_params __wine_unix_readwritev_params_t;
+typedef __wine_unix_preadwritev_params __wine_unix_preadwritev_params_t;
+typedef __wine_unix_get_std_host_fd_params __wine_unix_get_std_host_fd_params_t;
+typedef __wine_unix_readwrite_params __wine_unix_readwrite_params_t;
 #endif
 
 #ifdef WINE_UNIX_LIB
@@ -263,13 +263,13 @@ extern "C"
 	extern __WINE_UNIX_DLLEXPORT __wine_unixlib_entry_t const __wine_unix_call_wow64_funcs[];
 #endif
 #else
-	/*
-	PE side: ntdll's __wine_unix_call_dispatcher (a data export holding the
-	dispatcher address). The "unixlib handle" is the loaded unixlib's
-	__wine_unix_call_funcs table pointer.
-	*/
-	typedef __wine_unix_status_t(__WINE_UNIX_DEFAULTCALL *__wine_unix_call_dispatcher_t)(__wine_unixlib_handle_t,
-																						 unsigned int, void *);
+/*
+PE side: ntdll's __wine_unix_call_dispatcher (a data export holding the
+dispatcher address). The "unixlib handle" is the loaded unixlib's
+__wine_unix_call_funcs table pointer.
+*/
+typedef __wine_unix_status_t(__WINE_UNIX_DEFAULTCALL *__wine_unix_call_dispatcher_t)(__wine_unixlib_handle_t,
+																					 unsigned int, void *);
 #endif
 
 #ifdef __cplusplus

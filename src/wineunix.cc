@@ -58,7 +58,7 @@ bool resolve() noexcept
 	*/
 	char8_t disp_name[] = u8"__wine_unix_call_dispatcher";
 	ansi_string disp_as{static_cast<uint16_t>(sizeof(disp_name) - 1),
-						static_cast<uint16_t>(sizeof(disp_name)), reinterpret_cast<char*>(disp_name)};
+						static_cast<uint16_t>(sizeof(disp_name)), reinterpret_cast<char *>(disp_name)};
 	void *disp_var{};
 	if (ntdll_LdrGetProcedureAddress(ntdll, &disp_as, 0, &disp_var) || disp_var == nullptr)
 	{
@@ -72,7 +72,7 @@ bool resolve() noexcept
 	uint_least64_t res[2]{};
 	size_t reslen{};
 	if (ntdll_NtQueryVirtualMemory(reinterpret_cast<void *>(static_cast<uintptr_t>(-1)), &lib_us,
-							 memory_wine_load_unix_lib_by_name, res, sizeof(res), &reslen) ||
+								   memory_wine_load_unix_lib_by_name, res, sizeof(res), &reslen) ||
 		res[1] == 0)
 	{
 		return false;
@@ -327,7 +327,7 @@ extern "C"
 	}
 
 	__WINE_UNIX_API __wine_unix_rw_result_t __wine_unix_write(__wine_host_fd_t host_fd, void const *buf,
-															size_t len) return_failure{__wine_unix_errc}
+															  size_t len) return_failure{__wine_unix_errc}
 	{
 		auto const r{__wine_unix_write_returns_status(host_fd, buf, len)};
 		if (r.status != __WINE_UNIX_ERRNO_SUCCESS)
@@ -338,7 +338,7 @@ extern "C"
 	}
 
 	__WINE_UNIX_API __wine_unix_rw_result_t __wine_unix_read(__wine_host_fd_t host_fd, void *buf,
-														   size_t len) return_failure{__wine_unix_errc}
+															 size_t len) return_failure{__wine_unix_errc}
 	{
 		auto const r{__wine_unix_read_returns_status(host_fd, buf, len)};
 		if (r.status != __WINE_UNIX_ERRNO_SUCCESS)

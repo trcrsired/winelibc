@@ -434,8 +434,8 @@ __wine_unix_host_fd_status_t nt_openat(__wine_host_fd_t host_dirfd, char const *
 	io_status_block iosb{};
 	void *handle{};
 	auto const status{ntdll_NtCreateFile(&handle, access, &oa, &iosb, nullptr, file_attribute_normal,
-								   file_share_read | file_share_write | file_share_delete, disposition, options,
-								   nullptr, 0)};
+										 file_share_read | file_share_write | file_share_delete, disposition, options,
+										 nullptr, 0)};
 	if (status != 0)
 	{
 		return {ntstatus_to_wine_errno(status), 0};
@@ -604,9 +604,9 @@ __wine_unix_status_t nt_transfer(void *handle, void *buf, ::std::size_t len, int
 		}
 		io_status_block iosb{};
 		auto const st{write ? ntdll_NtWriteFile(handle, nullptr, nullptr, nullptr, __builtin_addressof(iosb),
-										  first, request, offp, nullptr)
+												first, request, offp, nullptr)
 							: ntdll_NtReadFile(handle, nullptr, nullptr, nullptr, __builtin_addressof(iosb),
-										 first, request, offp, nullptr)};
+											   first, request, offp, nullptr)};
 		if (st != 0)
 		{
 			auto const ust{static_cast<uint32_t>(st)};
@@ -956,7 +956,7 @@ extern "C"
 	}
 
 	__WINE_UNIX_API __wine_unix_rw_result_t __wine_unix_write(__wine_host_fd_t host_fd, void const *buf,
-															size_t len) return_failure{__wine_unix_errc}
+															  size_t len) return_failure{__wine_unix_errc}
 	{
 		auto const r{__wine_unix_write_returns_status(host_fd, buf, len)};
 		if (r.status != __WINE_UNIX_ERRNO_SUCCESS)
@@ -967,7 +967,7 @@ extern "C"
 	}
 
 	__WINE_UNIX_API __wine_unix_rw_result_t __wine_unix_read(__wine_host_fd_t host_fd, void *buf,
-														   size_t len) return_failure{__wine_unix_errc}
+															 size_t len) return_failure{__wine_unix_errc}
 	{
 		auto const r{__wine_unix_read_returns_status(host_fd, buf, len)};
 		if (r.status != __WINE_UNIX_ERRNO_SUCCESS)

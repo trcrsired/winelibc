@@ -511,7 +511,7 @@ static __wine_unix_status_t wow64_unix_nt_handle_to_host_fd(void *args) noexcept
 	}
 	int unix_fd{};
 	if (handle_to_fd(reinterpret_cast<void *>(static_cast<uintptr_t>(
-			 static_cast<::std::uint_least32_t>(params->handle))),
+						 static_cast<::std::uint_least32_t>(params->handle))),
 					 0, &unix_fd, nullptr))
 	{
 		return __WINE_UNIX_ERRNO_EBADF;

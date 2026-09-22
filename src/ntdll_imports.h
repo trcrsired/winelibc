@@ -66,45 +66,45 @@ extern "C"
 	__declspec(dllimport) int32_t __stdcall ntdll_NtClose(void *handle) noexcept
 		__WINE_UNIX_NT_RENAME(NtClose, 4);
 	__declspec(dllimport) int32_t __stdcall ntdll_NtCreateFile(void **handle, uint32_t desired_access,
-															 object_attributes *objattr,
-															 io_status_block *iosb, int64_t *alloc_size,
-															 uint32_t file_attributes, uint32_t share_access,
-															 uint32_t create_disposition,
-															 uint32_t create_options, void *ea_buffer,
-															 uint32_t ea_length) noexcept
+															   object_attributes *objattr,
+															   io_status_block *iosb, int64_t *alloc_size,
+															   uint32_t file_attributes, uint32_t share_access,
+															   uint32_t create_disposition,
+															   uint32_t create_options, void *ea_buffer,
+															   uint32_t ea_length) noexcept
 		__WINE_UNIX_NT_RENAME(NtCreateFile, 44);
 	__declspec(dllimport) int32_t __stdcall ntdll_NtReadFile(void *handle, void *event, void *apc_routine,
-														   void *apc_context, io_status_block *iosb,
-														   void *buffer, uint32_t length,
-														   int64_t *byte_offset, uint32_t *key) noexcept
+															 void *apc_context, io_status_block *iosb,
+															 void *buffer, uint32_t length,
+															 int64_t *byte_offset, uint32_t *key) noexcept
 		__WINE_UNIX_NT_RENAME(NtReadFile, 36);
 	__declspec(dllimport) int32_t __stdcall ntdll_NtWriteFile(void *handle, void *event, void *apc_routine,
-															void *apc_context, io_status_block *iosb,
-															void const *buffer, uint32_t length,
-															int64_t *byte_offset, uint32_t *key) noexcept
+															  void *apc_context, io_status_block *iosb,
+															  void const *buffer, uint32_t length,
+															  int64_t *byte_offset, uint32_t *key) noexcept
 		__WINE_UNIX_NT_RENAME(NtWriteFile, 36);
 	__declspec(dllimport) int32_t __stdcall ntdll_NtQueryVirtualMemory(void *process, void const *addr,
-																	 uint32_t info_class, void *buffer,
-																	 size_t len, size_t *res_len) noexcept
+																	   uint32_t info_class, void *buffer,
+																	   size_t len, size_t *res_len) noexcept
 		__WINE_UNIX_NT_RENAME(NtQueryVirtualMemory, 24);
 	__declspec(dllimport) int32_t __stdcall ntdll_LdrGetDllHandle(char16_t const *path,
-																uint32_t *characteristics,
-																unicode_string *name,
-																void **handle) noexcept
+																  uint32_t *characteristics,
+																  unicode_string *name,
+																  void **handle) noexcept
 		__WINE_UNIX_NT_RENAME(LdrGetDllHandle, 16);
 	__declspec(dllimport) int32_t __stdcall ntdll_LdrGetProcedureAddress(void *handle,
-																	   ansi_string const *name,
-																	   uint32_t ordinal,
-																	   void **proc) noexcept
+																		 ansi_string const *name,
+																		 uint32_t ordinal,
+																		 void **proc) noexcept
 		__WINE_UNIX_NT_RENAME(LdrGetProcedureAddress, 16);
 	__declspec(dllimport) void *__stdcall ntdll_RtlAllocateHeap(void *heap, uint32_t flags,
-															  uintptr_t size) noexcept
+																uintptr_t size) noexcept
 		__WINE_UNIX_NT_RENAME(RtlAllocateHeap, 12);
 	__declspec(dllimport) int __stdcall ntdll_RtlFreeHeap(void *heap, uint32_t flags, void *ptr) noexcept
 		__WINE_UNIX_NT_RENAME(RtlFreeHeap, 12);
 	__declspec(dllimport) void *__stdcall ntdll_RtlGetCurrentPeb() noexcept
 		__WINE_UNIX_NT_RENAME(RtlGetCurrentPeb, 0);
 	__declspec(dllimport) void __stdcall ntdll_RtlInitUnicodeString(unicode_string *dst,
-																  char16_t const *src) noexcept
+																	char16_t const *src) noexcept
 		__WINE_UNIX_NT_RENAME(RtlInitUnicodeString, 8);
 }
