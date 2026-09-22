@@ -508,7 +508,7 @@ static_assert(__WINE_UNIX_O_TMPFILE == O_TMPFILE);
 
 extern "C"
 {
-	__WINE_UNIX_DLLEXPORT __wine_unixlib_entry_t const __wine_unix_call_funcs[] = {
+	__wine_unixlib_entry_t const __wine_unix_call_funcs[] = {
 		::__wine_unix::unix_host_fd_to_unix_fd,
 		::__wine_unix::unix_unix_fd_to_host_fd,
 		::__wine_unix::unix_host_fd_to_nt_handle,
@@ -522,7 +522,7 @@ extern "C"
 	};
 
 #if INTPTR_MAX >= INT64_MAX
-	__WINE_UNIX_DLLEXPORT __wine_unixlib_entry_t const __wine_unix_call_wow64_funcs[] = {
+	__wine_unixlib_entry_t const __wine_unix_call_wow64_funcs[] = {
 		::__wine_unix::wow64_unix_host_fd_to_unix_fd,
 		::__wine_unix::wow64_unix_unix_fd_to_host_fd,
 		::__wine_unix::wow64_unix_host_fd_to_nt_handle,
@@ -536,7 +536,7 @@ extern "C"
 	};
 #endif
 
-	__WINE_UNIX_DLLEXPORT __wine_unix_status_t __wine_unix_lib_init(void) noexcept
+	__wine_unix_status_t __wine_unix_lib_init(void) noexcept
 	{
 		return __WINE_UNIX_ERRNO_SUCCESS;
 	}
