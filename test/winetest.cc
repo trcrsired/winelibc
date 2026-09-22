@@ -1,27 +1,23 @@
 /*
-PE-side proof of concept for the __wine_unix api (__wine_unix_pe.h).
+PE-side test for the wineunix.dll api (__wine_unix.h).
 
-Run:
-	WINEDLLPATH=<build dir> wine winetest.exe       unixcall path (fast_io_wine.so)
-	WINEDLLPATH=<build dir> wine winetest.exe nt    winelibc_nt.dll path
+The exe imports the flat api from wineunix.dll — which implementation it gets
+depends only on which wineunix.dll sits next to it:
+
+	unixcall/winetest.exe -> unixcall wineunix.dll -> libwineunix.so -> libc
+	nt/winetest.exe       -> nt wineunix.dll -> ntdll
+
+libwineunix.so itself is found through WINEDLLPATH by the unixcall dll.
 
 Silent: exit status is the only signal.
 */
 
-#include <cstdint>
 #include <cstring>
 
-#include <__wine_unix/__wine_unix_pe.h>
+#include <__wine_unix/__wine_unix.h>
 
-int main(int argc, char **argv)
+int main()
 {
-	bool const force_nt{argc > 1 && std::strcmp(argv[1], "nt") == 0};
-	if (force_nt ? __wine_unix_pe_init_nt() != 0
-				 : __wine_unix_pe_init(u"fast_io_wine", 12) != 0)
-	{
-		return 1;
-	}
-
 	/* openat(AT_FDCWD, "/tmp/fast_io_winetest.txt", O_WRONLY|O_CREAT|O_TRUNC, 0644) */
 	char const path[] = "/tmp/fast_io_winetest.txt";
 	auto op{__wine_unix_openat_returns_status(0, path, sizeof(path) - 1,

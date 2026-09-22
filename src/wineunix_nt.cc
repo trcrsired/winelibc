@@ -1,20 +1,18 @@
 /*
-winelibc_nt.dll — the NT side of the __wine_unix contract.
+wineunix.dll (nt implementation) — built for real windows.
 
-Compiled as a PE dll (clang --target=*-windows-msvc, no wine toolchain). It
-exports __wine_unix_call_funcs[] exactly like the host unixlib does, but every
-entry forwards to ntdll instead of the host libc. A PE binary that talks the
-__wine_unix ABI therefore works unchanged on real windows: on wine the table
-comes from fast_io_wine.so through __wine_unix_call_dispatcher; here it is
-imported straight from this dll.
+	clang++ --config=$HOME/herbcfgs/x86_64-windows-msvc.cfg -fherbceptions -shared \
+		-o wineunix.dll src/wineunix_nt.cc -Iinclude -lntdll
 
-	clang++ --config=$HOME/herbcfgs/x86_64-windows-msvc.cfg -shared \
-		-o winelibc_nt.dll src/ntemu.cc -Iinclude -lntdll
+Same exports as the unixcall wineunix.dll, but every call forwards straight to
+ntdll — no libwineunix.so, no dispatcher, no params marshalling. Swapping this
+dll in is all it takes for a binary built against __wine_unix.h to run on real
+windows.
 */
 
+#define __WINE_UNIX_DLL_BUILD
+
 #include <__wine_unix/__wine_unix.h>
-#include <__wine_unix/__wine_unix_errno.h>
-#include <__wine_unix/__wine_unix_fcntl.h>
 
 #include <cstdint>
 #include <cstddef>
@@ -130,19 +128,6 @@ constexpr uint32_t status_file_is_a_directory{0xC00000BA};
 constexpr uint32_t status_name_too_long{0xC0000106};
 constexpr uint32_t status_disk_full{0xC000007F};
 constexpr uint32_t status_insufficient_resources{0xC000009A};
-
-template <typename T>
-inline ::std::uintptr_t param_addr(T v) noexcept
-{
-	if constexpr (::std::is_pointer_v<T>)
-	{
-		return reinterpret_cast<::std::uintptr_t>(v);
-	}
-	else
-	{
-		return static_cast<::std::uintptr_t>(v);
-	}
-}
 
 inline __wine_unix_status_t ntstatus_to_wine_errno(int32_t status) noexcept
 {
@@ -284,80 +269,69 @@ inline ::std::size_t unix_abs_to_nt(char const *filename, ::std::size_t filename
 	return pos;
 }
 
-__wine_unix_status_t nt_host_fd_to_unix_fd(void *args) noexcept
+__wine_unix_unix_fd_status_t nt_host_fd_to_unix_fd(__wine_host_fd_t host_fd) noexcept
 {
-	auto *params{static_cast<__wine_unix_host_fd_to_unix_fd_params_t *>(args)};
 	void *handle{};
-	if (auto const err{host_fd_to_handle(params->host_fd, handle)}; err)
+	if (auto const err{host_fd_to_handle(host_fd, handle)}; err)
 	{
-		params->unix_fd = -1;
-		return err;
+		return {err, -1};
 	}
 	auto const v{reinterpret_cast<::std::uintptr_t>(handle)};
 	if (static_cast<::std::uintptr_t>(static_cast<int>(v)) != v)
 	{
-		params->unix_fd = -1;
-		return __WINE_UNIX_ERRNO_EBADF;
+		return {__WINE_UNIX_ERRNO_EBADF, -1};
 	}
-	params->unix_fd = static_cast<int>(v);
-	return __WINE_UNIX_ERRNO_SUCCESS;
+	return {__WINE_UNIX_ERRNO_SUCCESS, static_cast<int>(v)};
 }
 
-__wine_unix_status_t nt_unix_fd_to_host_fd(void *args) noexcept
+__wine_unix_host_fd_status_t nt_unix_fd_to_host_fd(int unix_fd) noexcept
 {
-	auto *params{static_cast<__wine_unix_unix_fd_to_host_fd_params_t *>(args)};
-	params->host_fd = params->unix_fd < 0 ? 0 : static_cast<__wine_host_fd_t>(params->unix_fd);
-	return __WINE_UNIX_ERRNO_SUCCESS;
+	return {__WINE_UNIX_ERRNO_SUCCESS,
+			unix_fd < 0 ? 0 : static_cast<__wine_host_fd_t>(unix_fd)};
 }
 
-__wine_unix_status_t nt_host_fd_to_nt_handle(void *args) noexcept
+__wine_unix_nt_handle_status_t nt_host_fd_to_nt_handle(__wine_host_fd_t host_fd) noexcept
 {
-	auto *params{static_cast<__wine_unix_host_fd_to_nt_handle_params_t *>(args)};
 	void *handle{};
-	if (auto const err{host_fd_to_handle(params->host_fd, handle)}; err)
+	if (auto const err{host_fd_to_handle(host_fd, handle)}; err)
 	{
-		return err;
+		return {err, 0};
 	}
-	params->handle = static_cast<ptrdiff_t>(reinterpret_cast<::std::uintptr_t>(handle));
-	return __WINE_UNIX_ERRNO_SUCCESS;
+	return {__WINE_UNIX_ERRNO_SUCCESS,
+			static_cast<ptrdiff_t>(reinterpret_cast<::std::uintptr_t>(handle))};
 }
 
-__wine_unix_status_t nt_nt_handle_to_host_fd(void *args) noexcept
+__wine_unix_host_fd_status_t nt_nt_handle_to_host_fd(ptrdiff_t handle) noexcept
 {
-	auto *params{static_cast<__wine_unix_nt_handle_to_host_fd_params_t *>(args)};
-	params->host_fd = handle_to_host_fd(reinterpret_cast<void *>(static_cast<::std::uintptr_t>(params->handle)));
-	return __WINE_UNIX_ERRNO_SUCCESS;
+	return {__WINE_UNIX_ERRNO_SUCCESS,
+			handle_to_host_fd(reinterpret_cast<void *>(static_cast<::std::uintptr_t>(handle)))};
 }
 
-__wine_unix_status_t nt_openat(void *args) noexcept
+__wine_unix_host_fd_status_t nt_openat(__wine_host_fd_t host_dirfd, char const *filename,
+									   ::std::size_t filenamelen, __wine_host_flags_t flags,
+									   __wine_host_mode_t mode) noexcept
 {
-	auto *params{static_cast<__wine_unix_openat_params_t *>(args)};
-	auto const *filename{reinterpret_cast<char const *>(param_addr(params->filename))};
-	auto const filenamelen{static_cast<::std::size_t>(params->filenamelen)};
-
 	char16_t ntbfr[nt_path_max];
 	unicode_string us{0, static_cast<uint16_t>(sizeof(ntbfr)), ntbfr};
 	void *rootdir{};
 	::std::size_t wlen{};
-	if (params->host_dirfd == 0)
+	if (host_dirfd == 0)
 	{
 		wlen = unix_abs_to_nt(filename, filenamelen, ntbfr, nt_path_max - 1);
 	}
 	else
 	{
-		if (auto const err{host_fd_to_handle(static_cast<__wine_host_fd_t>(params->host_dirfd), rootdir)}; err)
+		if (auto const err{host_fd_to_handle(host_dirfd, rootdir)}; err)
 		{
-			return err;
+			return {err, 0};
 		}
 		wlen = unix_rel_to_nt(filename, filenamelen, ntbfr, nt_path_max - 1);
 	}
 	if (wlen == 0)
 	{
-		return __WINE_UNIX_ERRNO_ENAMETOOLONG;
+		return {__WINE_UNIX_ERRNO_ENAMETOOLONG, 0};
 	}
 	us.Length = static_cast<uint16_t>(wlen * sizeof(char16_t));
-
-	auto const flags{static_cast<__wine_host_flags_t>(params->flags)};
 	uint32_t access{file_read_attributes | file_write_attributes | synchronize};
 	uint32_t options{file_synchronous_io_nonalert};
 	uint32_t disposition{file_open};
@@ -421,35 +395,34 @@ __wine_unix_status_t nt_openat(void *args) noexcept
 	auto const status{NtCreateFile(&handle, access, &oa, &iosb, nullptr, file_attribute_normal,
 								   file_share_read | file_share_write | file_share_delete, disposition, options,
 								   nullptr, 0)};
-	params->host_fd = static_cast<decltype(params->host_fd)>(handle_to_host_fd(handle));
-	return ntstatus_to_wine_errno(status);
+	if (status != 0)
+	{
+		return {ntstatus_to_wine_errno(status), 0};
+	}
+	return {__WINE_UNIX_ERRNO_SUCCESS, handle_to_host_fd(handle)};
 }
 
-__wine_unix_status_t nt_close(void *args) noexcept
+__wine_unix_status_t nt_close(__wine_host_fd_t host_fd) noexcept
 {
-	auto *params{static_cast<__wine_unix_close_params_t *>(args)};
 	void *handle{};
-	if (auto const err{host_fd_to_handle(static_cast<__wine_host_fd_t>(params->host_fd), handle)}; err)
+	if (auto const err{host_fd_to_handle(host_fd, handle)}; err)
 	{
 		return err;
 	}
 	return ntstatus_to_wine_errno(NtClose(handle));
 }
 
-template <typename Params, bool Write>
-__wine_unix_status_t readwritev_common(Params *params, int64_t const *byte_offset) noexcept
+template <bool Write>
+__wine_unix_rwv_status_t readwritev_common(__wine_host_fd_t host_fd, __wine_unix_iovec_t const *iovs,
+										   ::std::size_t iovsize, int64_t const *byte_offset) noexcept
 {
+	__wine_unix_rwv_status_t r{__WINE_UNIX_ERRNO_SUCCESS, 0, 0, 0};
 	void *handle{};
-	if (auto const err{host_fd_to_handle(static_cast<__wine_host_fd_t>(params->host_fd), handle)}; err)
+	if (auto const err{host_fd_to_handle(host_fd, handle)}; err)
 	{
-		return err;
+		r.status = err;
+		return r;
 	}
-	auto const *iovs{reinterpret_cast<__wine_unix_iovec_t const *>(param_addr(params->iovs))};
-	auto const iovsize{static_cast<::std::size_t>(params->iovsize)};
-	::std::size_t total{};
-	::std::size_t baseindex{};
-	::std::size_t index{};
-	__wine_unix_status_t ret{__WINE_UNIX_ERRNO_SUCCESS};
 	for (::std::size_t i{}; i != iovsize; ++i)
 	{
 		auto const ilen{static_cast<::std::size_t>(iovs[i].iov_len)};
@@ -463,7 +436,7 @@ __wine_unix_status_t readwritev_common(Params *params, int64_t const *byte_offse
 		int64_t *offp{nullptr};
 		if (byte_offset != nullptr)
 		{
-			off = *byte_offset + static_cast<int64_t>(total);
+			off = *byte_offset + static_cast<int64_t>(r.total);
 			offp = &off;
 		}
 		auto const status{Write ? NtWriteFile(handle, nullptr, nullptr, nullptr, &iosb, base,
@@ -472,54 +445,50 @@ __wine_unix_status_t readwritev_common(Params *params, int64_t const *byte_offse
 											 static_cast<uint32_t>(ilen), offp, nullptr)};
 		if (status)
 		{
-			ret = ntstatus_to_wine_errno(status);
+			r.status = ntstatus_to_wine_errno(status);
 			break;
 		}
 		auto const done{static_cast<::std::size_t>(iosb.Information)};
-		total += done;
+		r.total += done;
 		if (done < ilen)
 		{
-			baseindex = i;
-			index = done;
-			goto done;
+			r.baseindex = i;
+			r.index = done;
+			return r;
 		}
 	}
-	if (ret == __WINE_UNIX_ERRNO_SUCCESS)
+	if (r.status == __WINE_UNIX_ERRNO_SUCCESS)
 	{
-		baseindex = iovsize;
-		index = 0;
+		r.baseindex = iovsize;
+		r.index = 0;
 	}
-done:
-	params->total = static_cast<decltype(params->total)>(total);
-	params->baseindex = static_cast<decltype(params->baseindex)>(baseindex);
-	params->index = static_cast<decltype(params->index)>(index);
-	return ret;
+	return r;
 }
 
-__wine_unix_status_t nt_writev(void *args) noexcept
+__wine_unix_rwv_status_t nt_writev(__wine_host_fd_t host_fd, __wine_unix_iovec_t const *iovs,
+								   ::std::size_t iovsize) noexcept
 {
-	return readwritev_common<__wine_unix_readwritev_params_t, true>(
-		static_cast<__wine_unix_readwritev_params_t *>(args), nullptr);
+	return readwritev_common<true>(host_fd, iovs, iovsize, nullptr);
 }
 
-__wine_unix_status_t nt_readv(void *args) noexcept
+__wine_unix_rwv_status_t nt_readv(__wine_host_fd_t host_fd, __wine_unix_iovec_t const *iovs,
+								  ::std::size_t iovsize) noexcept
 {
-	return readwritev_common<__wine_unix_readwritev_params_t, false>(
-		static_cast<__wine_unix_readwritev_params_t *>(args), nullptr);
+	return readwritev_common<false>(host_fd, iovs, iovsize, nullptr);
 }
 
-__wine_unix_status_t nt_pwritev(void *args) noexcept
+__wine_unix_rwv_status_t nt_pwritev(__wine_host_fd_t host_fd, __wine_unix_iovec_t const *iovs,
+									::std::size_t iovsize, __wine_off_t offset) noexcept
 {
-	auto *params{static_cast<__wine_unix_preadwritev_params_t *>(args)};
-	auto const offset{static_cast<int64_t>(params->offset)};
-	return readwritev_common<__wine_unix_preadwritev_params_t, true>(params, &offset);
+	auto const off{static_cast<int64_t>(offset)};
+	return readwritev_common<true>(host_fd, iovs, iovsize, &off);
 }
 
-__wine_unix_status_t nt_preadv(void *args) noexcept
+__wine_unix_rwv_status_t nt_preadv(__wine_host_fd_t host_fd, __wine_unix_iovec_t const *iovs,
+								   ::std::size_t iovsize, __wine_off_t offset) noexcept
 {
-	auto *params{static_cast<__wine_unix_preadwritev_params_t *>(args)};
-	auto const offset{static_cast<int64_t>(params->offset)};
-	return readwritev_common<__wine_unix_preadwritev_params_t, false>(params, &offset);
+	auto const off{static_cast<int64_t>(offset)};
+	return readwritev_common<false>(host_fd, iovs, iovsize, &off);
 }
 
 } // namespace
@@ -527,23 +496,186 @@ __wine_unix_status_t nt_preadv(void *args) noexcept
 
 extern "C"
 {
-	extern __WINE_UNIX_DLLEXPORT __wine_unixlib_entry_t const __wine_unix_call_funcs[] = {
-		::winelibc_nt::nt_host_fd_to_unix_fd, ::winelibc_nt::nt_unix_fd_to_host_fd,
-		::winelibc_nt::nt_host_fd_to_nt_handle, ::winelibc_nt::nt_nt_handle_to_host_fd,
-		::winelibc_nt::nt_openat, ::winelibc_nt::nt_close, ::winelibc_nt::nt_writev,
-		::winelibc_nt::nt_readv, ::winelibc_nt::nt_pwritev, ::winelibc_nt::nt_preadv,
-	};
-
-	__WINE_UNIX_DLLEXPORT __wine_unix_status_t __wine_unix_lib_init(void) noexcept
+	__WINE_UNIX_API __wine_unix_unix_fd_status_t
+	__wine_unix_host_fd_to_unix_fd_returns_status(__wine_host_fd_t host_fd) noexcept
 	{
-		return __WINE_UNIX_ERRNO_SUCCESS;
+		return ::winelibc_nt::nt_host_fd_to_unix_fd(host_fd);
 	}
+
+	__WINE_UNIX_API __wine_unix_host_fd_status_t
+	__wine_unix_unix_fd_to_host_fd_returns_status(int unix_fd) noexcept
+	{
+		return ::winelibc_nt::nt_unix_fd_to_host_fd(unix_fd);
+	}
+
+	__WINE_UNIX_API __wine_unix_nt_handle_status_t
+	__wine_unix_host_fd_to_nt_handle_returns_status(__wine_host_fd_t host_fd) noexcept
+	{
+		return ::winelibc_nt::nt_host_fd_to_nt_handle(host_fd);
+	}
+
+	__WINE_UNIX_API __wine_unix_host_fd_status_t
+	__wine_unix_nt_handle_to_host_fd_returns_status(ptrdiff_t handle) noexcept
+	{
+		return ::winelibc_nt::nt_nt_handle_to_host_fd(handle);
+	}
+
+	__WINE_UNIX_API __wine_unix_host_fd_status_t
+	__wine_unix_openat_returns_status(__wine_host_fd_t host_dirfd, char const *filename, size_t filenamelen,
+									  __wine_host_flags_t flags, __wine_host_mode_t mode) noexcept
+	{
+		return ::winelibc_nt::nt_openat(host_dirfd, filename, filenamelen, flags, mode);
+	}
+
+	__WINE_UNIX_API __wine_unix_status_t __wine_unix_close_returns_status(__wine_host_fd_t host_fd) noexcept
+	{
+		return ::winelibc_nt::nt_close(host_fd);
+	}
+
+	__WINE_UNIX_API __wine_unix_rwv_status_t
+	__wine_unix_writev_returns_status(__wine_host_fd_t host_fd, __wine_unix_iovec_t const *iovs,
+									  size_t iovsize) noexcept
+	{
+		return ::winelibc_nt::nt_writev(host_fd, iovs, iovsize);
+	}
+
+	__WINE_UNIX_API __wine_unix_rwv_status_t
+	__wine_unix_readv_returns_status(__wine_host_fd_t host_fd, __wine_unix_iovec_t const *iovs,
+									 size_t iovsize) noexcept
+	{
+		return ::winelibc_nt::nt_readv(host_fd, iovs, iovsize);
+	}
+
+	__WINE_UNIX_API __wine_unix_rwv_status_t
+	__wine_unix_pwritev_returns_status(__wine_host_fd_t host_fd, __wine_unix_iovec_t const *iovs,
+									   size_t iovsize, __wine_off_t offset) noexcept
+	{
+		return ::winelibc_nt::nt_pwritev(host_fd, iovs, iovsize, offset);
+	}
+
+	__WINE_UNIX_API __wine_unix_rwv_status_t
+	__wine_unix_preadv_returns_status(__wine_host_fd_t host_fd, __wine_unix_iovec_t const *iovs,
+									  size_t iovsize, __wine_off_t offset) noexcept
+	{
+		return ::winelibc_nt::nt_preadv(host_fd, iovs, iovsize, offset);
+	}
+
+#if defined(__HERBCEPTIONS__)
+
+	__WINE_UNIX_API int __wine_unix_host_fd_to_unix_fd(__wine_host_fd_t host_fd) return_failure{__wine_unix_errc}
+	{
+		auto const r{__wine_unix_host_fd_to_unix_fd_returns_status(host_fd)};
+		if (r.status != __WINE_UNIX_ERRNO_SUCCESS)
+		{
+			return_failure static_cast<__wine_unix_errc>(r.status);
+		}
+		return r.unix_fd;
+	}
+
+	__WINE_UNIX_API __wine_host_fd_t __wine_unix_unix_fd_to_host_fd(int unix_fd) return_failure{__wine_unix_errc}
+	{
+		auto const r{__wine_unix_unix_fd_to_host_fd_returns_status(unix_fd)};
+		if (r.status != __WINE_UNIX_ERRNO_SUCCESS)
+		{
+			return_failure static_cast<__wine_unix_errc>(r.status);
+		}
+		return r.host_fd;
+	}
+
+	__WINE_UNIX_API ptrdiff_t __wine_unix_host_fd_to_nt_handle(__wine_host_fd_t host_fd) return_failure{__wine_unix_errc}
+	{
+		auto const r{__wine_unix_host_fd_to_nt_handle_returns_status(host_fd)};
+		if (r.status != __WINE_UNIX_ERRNO_SUCCESS)
+		{
+			return_failure static_cast<__wine_unix_errc>(r.status);
+		}
+		return r.handle;
+	}
+
+	__WINE_UNIX_API __wine_host_fd_t __wine_unix_nt_handle_to_host_fd(ptrdiff_t handle) return_failure{__wine_unix_errc}
+	{
+		auto const r{__wine_unix_nt_handle_to_host_fd_returns_status(handle)};
+		if (r.status != __WINE_UNIX_ERRNO_SUCCESS)
+		{
+			return_failure static_cast<__wine_unix_errc>(r.status);
+		}
+		return r.host_fd;
+	}
+
+	__WINE_UNIX_API __wine_host_fd_t __wine_unix_openat(__wine_host_fd_t host_dirfd, char const *filename,
+														size_t filenamelen, __wine_host_flags_t flags,
+														__wine_host_mode_t mode) return_failure{__wine_unix_errc}
+	{
+		auto const r{__wine_unix_openat_returns_status(host_dirfd, filename, filenamelen, flags, mode)};
+		if (r.status != __WINE_UNIX_ERRNO_SUCCESS)
+		{
+			return_failure static_cast<__wine_unix_errc>(r.status);
+		}
+		return r.host_fd;
+	}
+
+	__WINE_UNIX_API void __wine_unix_close(__wine_host_fd_t host_fd) return_failure{__wine_unix_errc}
+	{
+		if (auto const st{__wine_unix_close_returns_status(host_fd)}; st != __WINE_UNIX_ERRNO_SUCCESS)
+		{
+			return_failure static_cast<__wine_unix_errc>(st);
+		}
+	}
+
+	__WINE_UNIX_API __wine_unix_rwv_result_t __wine_unix_writev(__wine_host_fd_t host_fd,
+																__wine_unix_iovec_t const *iovs,
+																size_t iovsize) return_failure{__wine_unix_errc}
+	{
+		auto const r{__wine_unix_writev_returns_status(host_fd, iovs, iovsize)};
+		if (r.status != __WINE_UNIX_ERRNO_SUCCESS)
+		{
+			return_failure static_cast<__wine_unix_errc>(r.status);
+		}
+		return {r.total, r.baseindex, r.index};
+	}
+
+	__WINE_UNIX_API __wine_unix_rwv_result_t __wine_unix_readv(__wine_host_fd_t host_fd,
+															   __wine_unix_iovec_t const *iovs,
+															   size_t iovsize) return_failure{__wine_unix_errc}
+	{
+		auto const r{__wine_unix_readv_returns_status(host_fd, iovs, iovsize)};
+		if (r.status != __WINE_UNIX_ERRNO_SUCCESS)
+		{
+			return_failure static_cast<__wine_unix_errc>(r.status);
+		}
+		return {r.total, r.baseindex, r.index};
+	}
+
+	__WINE_UNIX_API __wine_unix_rwv_result_t __wine_unix_pwritev(__wine_host_fd_t host_fd,
+																 __wine_unix_iovec_t const *iovs,
+																 size_t iovsize,
+																 __wine_off_t offset) return_failure{__wine_unix_errc}
+	{
+		auto const r{__wine_unix_pwritev_returns_status(host_fd, iovs, iovsize, offset)};
+		if (r.status != __WINE_UNIX_ERRNO_SUCCESS)
+		{
+			return_failure static_cast<__wine_unix_errc>(r.status);
+		}
+		return {r.total, r.baseindex, r.index};
+	}
+
+	__WINE_UNIX_API __wine_unix_rwv_result_t __wine_unix_preadv(__wine_host_fd_t host_fd,
+																__wine_unix_iovec_t const *iovs,
+																size_t iovsize,
+																__wine_off_t offset) return_failure{__wine_unix_errc}
+	{
+		auto const r{__wine_unix_preadv_returns_status(host_fd, iovs, iovsize, offset)};
+		if (r.status != __WINE_UNIX_ERRNO_SUCCESS)
+		{
+			return_failure static_cast<__wine_unix_errc>(r.status);
+		}
+		return {r.total, r.baseindex, r.index};
+	}
+
+#endif
 
 	__declspec(dllexport) int __stdcall DllMain(void *, uint32_t, void *) noexcept
 	{
 		return 1;
 	}
 }
-
-static_assert(sizeof(__wine_unix_call_funcs) / sizeof(__wine_unixlib_entry_t) == __wine_unix_call_funcs_count,
-			  "__wine_unix_call_funcs must match the __wine_unix_funcs enum");

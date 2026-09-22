@@ -1,44 +1,42 @@
-﻿#pragma once
+#pragma once
 /*
-The shared contract between the PE (windows) side and the host unixlib
-(src/unixhost.cc).
+public api of wineunix.dll. the same exports ship in two implementations:
 
-Nothing is called directly across the PE <-> unix boundary. Every host libc call is
-wrapped as a unixcall:
+	wineunix.dll (unixcall): user -> wineunix.dll -> libwineunix.so -> host libc
+	wineunix.dll (nt):       user -> wineunix.dll -> ntdll
 
-	__wine_unix_status_t (*)(void *args)
+swap the dll and the same binary runs on wine or real windows.
 
-where args points at a "params" struct. Inputs go in, outputs are written back through
-the struct, and the return value is the status (0 = success, otherwise an errno value
-from __wine_unix_errno.h).
+two forms per call:
 
-The params struct is the real ABI contract between the two compilers (mingw/MSVC PE vs
-host clang/gcc), so its layout is frozen here. For wow64 (a 32-bit PE on a 64-bit host)
-we also define *_params32 variants, explicitly packed so every toolchain agrees on the
-layout; the 64-bit unixlib's __wine_unix_call_wow64_funcs[] wrappers marshal between
-them.
+	__wine_unix_<op>_returns_status(...)
+		returns a struct whose first member is the status (0 = success,
+		otherwise an errno value from __wine_unix_errno.h).
 
-On the PE side the call goes through ntdll's __wine_unix_call_dispatcher, which does the
-whole context save (registers, stack, TLS) before entering the unixlib. See the wine
-source: include/wine/unixlib.h and dlls/ntdll/unix/signal_x86_64.c
-(__wine_unix_call_dispatcher). The unixlib is loaded by name with
-NtQueryVirtualMemory(GetCurrentProcess(), &name, 1002, ...) which does a plain dlopen of
-the .so and dlsym's "__wine_unix_call_funcs" (see dlls/ntdll/unix/virtual.c).
+	__wine_unix_<op>(...) return_failure{__wine_unix_errc}
+		herbceptions builds only; failure rides the fails channel as
+		wine_errc and auto-propagates as std::error inside throws
+		functions via error_domain<wine_errc>.
+
+the params-struct marshalling between wineunix.dll and libwineunix.so is
+private to the two modules; see __wine_unix_abi.h.
 */
 
 #include <stdint.h>
 #include <limits.h>
 #include <stddef.h>
 
-#if defined(_WIN32) && !defined(__WINE__) || defined(__CYGWIN__)
-#define __WINE_UNIX_DEFAULTCALL __stdcall
-#define __WINE_UNIX_DLLEXPORT __declspec(dllexport)
-#elif defined(__GNUC__) || defined(__clang__)
-#define __WINE_UNIX_DEFAULTCALL
-#define __WINE_UNIX_DLLEXPORT __attribute__((visibility("default")))
+#include "__wine_unix_errno.h"
+#include "__wine_unix_fcntl.h"
+
+#if defined(_WIN32) || defined(__CYGWIN__)
+#if defined(__WINE_UNIX_DLL_BUILD)
+#define __WINE_UNIX_API __declspec(dllexport)
 #else
-#define __WINE_UNIX_DEFAULTCALL
-#define __WINE_UNIX_DLLEXPORT
+#define __WINE_UNIX_API __declspec(dllimport)
+#endif
+#else
+#define __WINE_UNIX_API
 #endif
 
 #ifdef __cplusplus
@@ -69,9 +67,6 @@ extern "C"
 	typedef __wine_host_fd_t __wine_host_flags_t;
 	typedef __wine_host_fd_t __wine_host_mode_t;
 
-	/* 32-bit pointer value, used to carry wow64 pointers across the boundary. */
-	typedef uint32_t __wine_unix_ptr32_t;
-
 	/* matches struct iovec layout on every unix host. */
 	typedef struct
 	{
@@ -79,202 +74,113 @@ extern "C"
 		size_t iov_len;
 	} __wine_unix_iovec_t;
 
-	/* uniform status/return type: 0 = success, otherwise an errno value. */
+	/* uniform status type: 0 = success, otherwise an errno value. */
 	typedef int_least32_t __wine_unix_status_t;
 
-	/* opaque handle to the unixlib call table. always 64-bit so it can cross wow64. */
-	typedef uint_least64_t __wine_unixlib_handle_t;
-
-	/* every unixcall has this signature; args always points at a params struct. */
-	typedef __wine_unix_status_t (*__wine_unixlib_entry_t)(void *args);
-
 	/*
-	Call codes. The order MUST match the __wine_unix_call_funcs and
-	__wine_unix_call_wow64_funcs tables in unixhost.cc.
-	*/
-	enum __wine_unix_calls
-	{
-		__wine_unix_call_host_fd_to_unix_fd,
-		__wine_unix_call_unix_fd_to_host_fd,
-		__wine_unix_call_host_fd_to_nt_handle,
-		__wine_unix_call_nt_handle_to_host_fd,
-		__wine_unix_call_openat,
-		__wine_unix_call_close,
-		__wine_unix_call_writev,
-		__wine_unix_call_readv,
-		__wine_unix_call_pwritev,
-		__wine_unix_call_preadv,
-		__wine_unix_call_funcs_count,
-	};
-
-	/*
-	host_fd is the backend's own descriptor encoding; 0 always means "no fd":
-	  unix side:     unix fd + 1
-	  nt-emulation:  raw windows HANDLE (never 0 when valid)
+	host_fd encoding is the wineunix.dll implementation's own; 0 always
+	means "no fd":
+	  unixcall impl: unix fd + 1 (through libwineunix.so)
+	  nt impl:       raw windows HANDLE (never 0 when valid)
 	*/
 
 	typedef struct
 	{
-		__wine_host_fd_t host_fd;
-		int unix_fd; /* output */
-	} __wine_unix_host_fd_to_unix_fd_params;
-
-	typedef struct
-	{
+		__wine_unix_status_t status;
 		int unix_fd;
-		__wine_host_fd_t host_fd; /* output */
-	} __wine_unix_unix_fd_to_host_fd_params;
+	} __wine_unix_unix_fd_status_t;
 
 	typedef struct
 	{
+		__wine_unix_status_t status;
 		__wine_host_fd_t host_fd;
-		ptrdiff_t handle; /* output */
-	} __wine_unix_host_fd_to_nt_handle_params;
+	} __wine_unix_host_fd_status_t;
 
 	typedef struct
 	{
+		__wine_unix_status_t status;
 		ptrdiff_t handle;
-		__wine_host_fd_t host_fd; /* output */
-	} __wine_unix_nt_handle_to_host_fd_params;
+	} __wine_unix_nt_handle_status_t;
 
 	typedef struct
 	{
-		__wine_host_fd_t host_dirfd; /* 0 means AT_FDCWD */
-		char const *filename;
-		size_t filenamelen;
-		__wine_host_flags_t flags;
-		__wine_host_mode_t mode;
-		__wine_host_fd_t host_fd; /* output */
-	} __wine_unix_openat_params;
+		__wine_unix_status_t status;
+		size_t total;
+		size_t baseindex;
+		size_t index;
+	} __wine_unix_rwv_status_t;
 
+	/* success-side value of the vectored calls. */
 	typedef struct
 	{
-		__wine_host_fd_t host_fd;
-	} __wine_unix_close_params;
+		size_t total;
+		size_t baseindex;
+		size_t index;
+	} __wine_unix_rwv_result_t;
 
-	typedef struct
-	{
-		__wine_host_fd_t host_fd;
-		__wine_unix_iovec_t const *iovs;
-		size_t iovsize;
-		size_t total;	  /* output: bytes transferred */
-		size_t baseindex; /* output: iovec index the transfer stopped at */
-		size_t index;	  /* output: bytes consumed within that iovec */
-	} __wine_unix_readwritev_params;
+	__WINE_UNIX_API __wine_unix_unix_fd_status_t __wine_unix_host_fd_to_unix_fd_returns_status(__wine_host_fd_t host_fd) __WINE_UNIX_NOEXCEPT;
+	__WINE_UNIX_API __wine_unix_host_fd_status_t __wine_unix_unix_fd_to_host_fd_returns_status(int unix_fd) __WINE_UNIX_NOEXCEPT;
+	__WINE_UNIX_API __wine_unix_nt_handle_status_t __wine_unix_host_fd_to_nt_handle_returns_status(__wine_host_fd_t host_fd) __WINE_UNIX_NOEXCEPT;
+	__WINE_UNIX_API __wine_unix_host_fd_status_t __wine_unix_nt_handle_to_host_fd_returns_status(ptrdiff_t handle) __WINE_UNIX_NOEXCEPT;
 
-	typedef struct
-	{
-		__wine_host_fd_t host_fd;
-		__wine_unix_iovec_t const *iovs;
-		size_t iovsize;
-		__wine_off_t offset;
-		size_t total;	  /* output */
-		size_t baseindex; /* output */
-		size_t index;	  /* output */
-	} __wine_unix_preadwritev_params;
+	__WINE_UNIX_API __wine_unix_host_fd_status_t __wine_unix_openat_returns_status(__wine_host_fd_t host_dirfd,
+																				  char const *filename,
+																				  size_t filenamelen,
+																				  __wine_host_flags_t flags,
+																				  __wine_host_mode_t mode) __WINE_UNIX_NOEXCEPT;
+	__WINE_UNIX_API __wine_unix_status_t __wine_unix_close_returns_status(__wine_host_fd_t host_fd) __WINE_UNIX_NOEXCEPT;
+	__WINE_UNIX_API __wine_unix_rwv_status_t __wine_unix_writev_returns_status(__wine_host_fd_t host_fd,
+																			  __wine_unix_iovec_t const *iovs,
+																			  size_t iovsize) __WINE_UNIX_NOEXCEPT;
+	__WINE_UNIX_API __wine_unix_rwv_status_t __wine_unix_readv_returns_status(__wine_host_fd_t host_fd,
+																			 __wine_unix_iovec_t const *iovs,
+																			 size_t iovsize) __WINE_UNIX_NOEXCEPT;
+	__WINE_UNIX_API __wine_unix_rwv_status_t __wine_unix_pwritev_returns_status(__wine_host_fd_t host_fd,
+																			   __wine_unix_iovec_t const *iovs,
+																			   size_t iovsize,
+																			   __wine_off_t offset) __WINE_UNIX_NOEXCEPT;
+	__WINE_UNIX_API __wine_unix_rwv_status_t __wine_unix_preadv_returns_status(__wine_host_fd_t host_fd,
+																			  __wine_unix_iovec_t const *iovs,
+																			  size_t iovsize,
+																			  __wine_off_t offset) __WINE_UNIX_NOEXCEPT;
 
-	/*
-	wow64 (32-bit PE on a 64-bit host) variants. Explicitly packed so the layout is
-	identical under MSVC x86, mingw x86 and the 64-bit unixlib reader.
-	*/
-#pragma pack(push, 1)
-	typedef struct
-	{
-		__wine_unix_ptr32_t host_fd;
-		int32_t unix_fd;
-	} __wine_unix_host_fd_to_unix_fd_params32;
+#if defined(__cplusplus) && defined(__HERBCEPTIONS__)
+}
 
-	typedef struct
-	{
-		int32_t unix_fd;
-		__wine_unix_ptr32_t host_fd;
-	} __wine_unix_unix_fd_to_host_fd_params32;
-
-	typedef struct
-	{
-		__wine_unix_ptr32_t host_fd;
-		int32_t handle;
-	} __wine_unix_host_fd_to_nt_handle_params32;
-
-	typedef struct
-	{
-		int32_t handle;
-		__wine_unix_ptr32_t host_fd;
-	} __wine_unix_nt_handle_to_host_fd_params32;
-
-	typedef struct
-	{
-		__wine_unix_ptr32_t host_dirfd;
-		__wine_unix_ptr32_t filename;
-		__wine_unix_ptr32_t filenamelen;
-		__wine_unix_ptr32_t flags;
-		__wine_unix_ptr32_t mode;
-		__wine_unix_ptr32_t host_fd;
-	} __wine_unix_openat_params32;
-
-	typedef struct
-	{
-		__wine_unix_ptr32_t host_fd;
-	} __wine_unix_close_params32;
-
-	typedef struct
-	{
-		__wine_unix_ptr32_t host_fd;
-		__wine_unix_ptr32_t iovs;
-		uint32_t iovsize;
-		uint32_t total;
-		uint32_t baseindex;
-		uint32_t index;
-	} __wine_unix_readwritev_params32;
-
-	typedef struct
-	{
-		__wine_unix_ptr32_t host_fd;
-		__wine_unix_ptr32_t iovs;
-		uint32_t iovsize;
-		__wine_off_t offset;
-		uint32_t total;
-		uint32_t baseindex;
-		uint32_t index;
-	} __wine_unix_preadwritev_params32;
-#pragma pack(pop)
-
-	/* arch-selected params types: what a given side actually builds/passes. */
-#if INTPTR_MAX < INT64_MAX
-	typedef __wine_unix_host_fd_to_unix_fd_params32 __wine_unix_host_fd_to_unix_fd_params_t;
-	typedef __wine_unix_unix_fd_to_host_fd_params32 __wine_unix_unix_fd_to_host_fd_params_t;
-	typedef __wine_unix_host_fd_to_nt_handle_params32 __wine_unix_host_fd_to_nt_handle_params_t;
-	typedef __wine_unix_nt_handle_to_host_fd_params32 __wine_unix_nt_handle_to_host_fd_params_t;
-	typedef __wine_unix_openat_params32 __wine_unix_openat_params_t;
-	typedef __wine_unix_close_params32 __wine_unix_close_params_t;
-	typedef __wine_unix_readwritev_params32 __wine_unix_readwritev_params_t;
-	typedef __wine_unix_preadwritev_params32 __wine_unix_preadwritev_params_t;
+#if defined(__HERBCEPTIONS__) && __has_include(<herbceptions/error>)
+#include <herbceptions/error>
+using __wine_unix_errc = ::std::wine_errc;
 #else
-	typedef __wine_unix_host_fd_to_unix_fd_params __wine_unix_host_fd_to_unix_fd_params_t;
-	typedef __wine_unix_unix_fd_to_host_fd_params __wine_unix_unix_fd_to_host_fd_params_t;
-	typedef __wine_unix_host_fd_to_nt_handle_params __wine_unix_host_fd_to_nt_handle_params_t;
-	typedef __wine_unix_nt_handle_to_host_fd_params __wine_unix_nt_handle_to_host_fd_params_t;
-	typedef __wine_unix_openat_params __wine_unix_openat_params_t;
-	typedef __wine_unix_close_params __wine_unix_close_params_t;
-	typedef __wine_unix_readwritev_params __wine_unix_readwritev_params_t;
-	typedef __wine_unix_preadwritev_params __wine_unix_preadwritev_params_t;
+enum class __wine_unix_errc : ::std::uint_least32_t
+{
+};
 #endif
 
-#ifdef WINE_UNIX_LIB
-	/* unixlib (unixhost.cc) exports: */
-	extern __WINE_UNIX_DLLEXPORT __wine_unixlib_entry_t const __wine_unix_call_funcs[];
-	__WINE_UNIX_DLLEXPORT __wine_unix_status_t __wine_unix_lib_init(void) __WINE_UNIX_NOEXCEPT;
-#if INTPTR_MAX >= INT64_MAX
-	extern __WINE_UNIX_DLLEXPORT __wine_unixlib_entry_t const __wine_unix_call_wow64_funcs[];
-#endif
-#else
-	/*
-	PE side: ntdll's __wine_unix_call_dispatcher (a data export holding the
-	dispatcher address). unixlib_handle is the loaded unixlib's
-	__wine_unix_call_funcs table. Under winelibc_nt.dll the table is called
-	directly without a dispatcher. See __wine_unix_pe.h for the call api.
-	*/
-	typedef __wine_unix_status_t (__WINE_UNIX_DEFAULTCALL *__wine_unix_call_dispatcher_t)(__wine_unixlib_handle_t, unsigned int, void *);
+extern "C"
+{
+	__WINE_UNIX_API int __wine_unix_host_fd_to_unix_fd(__wine_host_fd_t host_fd) return_failure{__wine_unix_errc};
+	__WINE_UNIX_API __wine_host_fd_t __wine_unix_unix_fd_to_host_fd(int unix_fd) return_failure{__wine_unix_errc};
+	__WINE_UNIX_API ptrdiff_t __wine_unix_host_fd_to_nt_handle(__wine_host_fd_t host_fd) return_failure{__wine_unix_errc};
+	__WINE_UNIX_API __wine_host_fd_t __wine_unix_nt_handle_to_host_fd(ptrdiff_t handle) return_failure{__wine_unix_errc};
+
+	__WINE_UNIX_API __wine_host_fd_t __wine_unix_openat(__wine_host_fd_t host_dirfd, char const *filename,
+														size_t filenamelen, __wine_host_flags_t flags,
+														__wine_host_mode_t mode) return_failure{__wine_unix_errc};
+	__WINE_UNIX_API void __wine_unix_close(__wine_host_fd_t host_fd) return_failure{__wine_unix_errc};
+	__WINE_UNIX_API __wine_unix_rwv_result_t __wine_unix_writev(__wine_host_fd_t host_fd,
+																__wine_unix_iovec_t const *iovs,
+																size_t iovsize) return_failure{__wine_unix_errc};
+	__WINE_UNIX_API __wine_unix_rwv_result_t __wine_unix_readv(__wine_host_fd_t host_fd,
+															   __wine_unix_iovec_t const *iovs,
+															   size_t iovsize) return_failure{__wine_unix_errc};
+	__WINE_UNIX_API __wine_unix_rwv_result_t __wine_unix_pwritev(__wine_host_fd_t host_fd,
+																 __wine_unix_iovec_t const *iovs,
+																 size_t iovsize,
+																 __wine_off_t offset) return_failure{__wine_unix_errc};
+	__WINE_UNIX_API __wine_unix_rwv_result_t __wine_unix_preadv(__wine_host_fd_t host_fd,
+																__wine_unix_iovec_t const *iovs,
+																size_t iovsize,
+																__wine_off_t offset) return_failure{__wine_unix_errc};
 #endif
 
 #ifdef __cplusplus

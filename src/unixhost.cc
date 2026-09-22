@@ -1,5 +1,5 @@
 ﻿/*
-The unix side of the fast_io wine_file layer. Compiled as a normal native shared
+libwineunix.so — the unix side of wineunix.dll. Compiled as a normal native shared
 library (clang/gcc, -fPIC -shared) with -DWINE_UNIX_LIB; no wine toolchain needed.
 
 Wine's loader dlopen's this .so and dlsym's "__wine_unix_call_funcs" (and
@@ -9,7 +9,7 @@ See dlls/ntdll/unix/virtual.c in the wine source.
 */
 
 #define WINE_UNIX_LIB 1
-#include <__wine_unix/__wine_unix.h>
+#include <__wine_unix/__wine_unix_abi.h>
 #include <__wine_unix/__wine_unix_errno.h>
 #include <__wine_unix/__wine_unix_fcntl.h>
 
@@ -78,6 +78,11 @@ struct c_path_malloc_guard
 	}
 };
 
+/*
+no NUL may appear inside [filename, filename + filenamelen) — an interior NUL
+would silently truncate the path for the C api. the terminated copy is
+allocated here on the unix side; a future sized-path host api may skip it.
+*/
 inline c_path_malloc_guard c_path_common(char const *filename, size_t filenamelen) noexcept
 {
 	if (filenamelen == SIZE_MAX)

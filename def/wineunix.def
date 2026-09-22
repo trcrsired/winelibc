@@ -1,0 +1,28 @@
+; wineunix.dll exports — used by llvm-dlltool to build the import library
+; (libwineunix.a) that PE consumers link against. identical for the
+; unixcall and nt implementations of the dll.
+;
+;   llvm-dlltool -d def/wineunix.def -D wineunix.dll -l libwineunix.a
+
+LIBRARY wineunix.dll
+EXPORTS
+    __wine_unix_host_fd_to_unix_fd_returns_status
+    __wine_unix_unix_fd_to_host_fd_returns_status
+    __wine_unix_host_fd_to_nt_handle_returns_status
+    __wine_unix_nt_handle_to_host_fd_returns_status
+    __wine_unix_openat_returns_status
+    __wine_unix_close_returns_status
+    __wine_unix_writev_returns_status
+    __wine_unix_readv_returns_status
+    __wine_unix_pwritev_returns_status
+    __wine_unix_preadv_returns_status
+    __wine_unix_host_fd_to_unix_fd
+    __wine_unix_unix_fd_to_host_fd
+    __wine_unix_host_fd_to_nt_handle
+    __wine_unix_nt_handle_to_host_fd
+    __wine_unix_openat
+    __wine_unix_close
+    __wine_unix_writev
+    __wine_unix_readv
+    __wine_unix_pwritev
+    __wine_unix_preadv
