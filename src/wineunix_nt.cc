@@ -84,8 +84,6 @@ extern "C"
 														  unicode_string *name, void **handle) noexcept;
 	__declspec(dllimport) int32_t __stdcall LdrGetProcedureAddress(void *handle, ansi_string const *name,
 																 uint32_t ordinal, void **proc) noexcept;
-	/* intrinsic, not an import — declared here instead of pulling in intrin.h */
-	unsigned long long __readgsqword(unsigned long offset) noexcept;
 }
 
 constexpr uint32_t nt_status_success{0};
@@ -430,10 +428,13 @@ staging fast_io uses for its nt/win32 scatter buffer logic.
 
 inline void *process_heap() noexcept
 {
-	/* TEB::ProcessEnvironmentBlock (0x60) -> PEB::ProcessHeap (0x30) */
-	auto const *teb{reinterpret_cast<char const *>(__readgsqword(0x30))};
-	auto const *peb{*reinterpret_cast<char *const *>(teb + 0x60)};
-	return *reinterpret_cast<void *const *>(peb + 0x30);
+	/*
+	fast_io rtl_get_process_heap: gs:[0x60] is the PEB pointer
+	(TEB::ProcessEnvironmentBlock), peb::ProcessHeap sits at 0x30.
+	*/
+	void *peb;
+	__asm__("{movq\t%%gs:0x60, %0|mov\t%0, %%gs:[0x60]}" : "=r"(peb));
+	return *reinterpret_cast<void **>(static_cast<char *>(peb) + 0x30);
 }
 
 struct rwv_buffer
