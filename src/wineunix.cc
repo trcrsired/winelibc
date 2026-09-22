@@ -237,6 +237,16 @@ extern "C"
 		return {call(__wine_unix_call_get_std_host_fd, &p), p.host_fd};
 	}
 
+	__WINE_UNIX_API __wine_host_fd_t __wine_unix_at_fdcwd(void) noexcept
+	{
+		__wine_unix_at_fdcwd_params_t p{0};
+		if (call(__wine_unix_call_at_fdcwd, &p) != __WINE_UNIX_ERRNO_SUCCESS)
+		{
+			return 0;
+		}
+		return p.host_fd;
+	}
+
 #if defined(__HERBCEPTIONS__)
 
 	__WINE_UNIX_API int __wine_unix_host_fd_to_unix_fd(__wine_host_fd_t host_fd) return_failure{__wine_unix_errc}

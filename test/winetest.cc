@@ -88,5 +88,23 @@ int main()
 	{
 		return 1;
 	}
+
+	/* at_fdcwd token: relative open through it must land in cwd */
+	auto const cwd{__wine_unix_at_fdcwd()};
+	if (cwd == 0)
+	{
+		return 1;
+	}
+	char const rel[] = "fast_io_winetest_atfd.txt";
+	auto rp{__wine_unix_openat_returns_status(cwd, rel, sizeof(rel) - 1,
+											  __WINE_UNIX_O_WRONLY | __WINE_UNIX_O_CREAT | __WINE_UNIX_O_TRUNC, 0644)};
+	if (rp.status != __WINE_UNIX_ERRNO_SUCCESS || rp.host_fd == 0)
+	{
+		return 1;
+	}
+	if (__wine_unix_close_returns_status(rp.host_fd) != __WINE_UNIX_ERRNO_SUCCESS)
+	{
+		return 1;
+	}
 	return 0;
 }

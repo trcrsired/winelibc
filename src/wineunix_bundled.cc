@@ -145,6 +145,13 @@ __wine_unix_status_t nt_op_get_std_host_fd(void *args) noexcept
 	return r.status;
 }
 
+__wine_unix_status_t nt_op_at_fdcwd(void *args) noexcept
+{
+	auto *p{static_cast<__wine_unix_at_fdcwd_params_t *>(args)};
+	p->host_fd = ::winelibc_nt::nt_at_fdcwd_value;
+	return __WINE_UNIX_ERRNO_SUCCESS;
+}
+
 __wine_unixlib_entry_t const nt_bundle_call_funcs[__wine_unix_call_funcs_count]{
 	nt_op_host_fd_to_unix_fd,
 	nt_op_unix_fd_to_host_fd,
@@ -159,6 +166,7 @@ __wine_unixlib_entry_t const nt_bundle_call_funcs[__wine_unix_call_funcs_count]{
 	nt_op_write,
 	nt_op_read,
 	nt_op_get_std_host_fd,
+	nt_op_at_fdcwd,
 };
 
 __wine_unix_status_t __WINE_UNIX_DEFAULTCALL nt_bundle_dispatch(__wine_unixlib_handle_t fns,

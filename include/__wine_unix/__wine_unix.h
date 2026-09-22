@@ -183,6 +183,14 @@ typedef ptrdiff_t __wine_off_t;
 	__WINE_UNIX_API __WINE_UNIX_CONST __wine_unix_host_fd_status_t
 	__wine_unix_get_std_host_fd_returns_status(int which) __WINE_UNIX_NOEXCEPT;
 
+	/*
+	the impl-defined at_fdcwd token to pass as host_dirfd: unixcall impl
+	returns AT_FDCWD encoded as host_fd (unix_fd + 1), nt impl returns the
+	-3 sentinel fast_io uses for at_fdcwd. 0 remains valid and also means
+	cwd. Infallible; returns 0 only if the dispatcher itself is broken.
+	*/
+	__WINE_UNIX_API __wine_host_fd_t __wine_unix_at_fdcwd(void) __WINE_UNIX_NOEXCEPT;
+
 #if defined(__cplusplus)
 }
 

@@ -83,13 +83,16 @@ inline __wine_unix_status_t host_fd_to_unix_fd(__wine_host_fd_t host_fd, int &un
 	{
 		return __WINE_UNIX_ERRNO_EBADF;
 	}
-	--host_fd;
-	constexpr __wine_host_fd_t intmx{static_cast<__wine_host_fd_t>(::std::numeric_limits<int>::max())};
-	if (intmx < host_fd)
+	/*
+	host_fd encodes unix_fd + 1; decoding negative unix fds (AT_FDCWD and
+	friends) wraps, so decode first and only then validate the result.
+	*/
+	unix_fd = static_cast<int>(host_fd - 1);
+	if (unix_fd < 0 && unix_fd != AT_FDCWD)
 	{
+		unix_fd = -1;
 		return __WINE_UNIX_ERRNO_EBADF;
 	}
-	unix_fd = static_cast<int>(host_fd);
 	return __WINE_UNIX_ERRNO_SUCCESS;
 }
 
@@ -434,6 +437,14 @@ static __wine_unix_status_t unix_get_std_host_fd(void *args) noexcept
 	return __WINE_UNIX_ERRNO_SUCCESS;
 }
 
+static __wine_unix_status_t unix_at_fdcwd(void *args) noexcept
+{
+	auto *params{static_cast<__wine_unix_at_fdcwd_params_t *>(args)};
+	/* host_fd encodes unix_fd + 1; AT_FDCWD keeps that encoding */
+	params->host_fd = static_cast<__wine_host_fd_t>(AT_FDCWD) + 1;
+	return __WINE_UNIX_ERRNO_SUCCESS;
+}
+
 #if INTPTR_MAX >= INT64_MAX
 /*
 wow64 (32-bit PE on a 64-bit host) wrappers. args points at a *_params32 struct laid
@@ -645,6 +656,13 @@ static __wine_unix_status_t wow64_unix_get_std_host_fd(void *args) noexcept
 	return __WINE_UNIX_ERRNO_SUCCESS;
 }
 
+static __wine_unix_status_t wow64_unix_at_fdcwd(void *args) noexcept
+{
+	auto *params{static_cast<__wine_unix_at_fdcwd_params32 *>(args)};
+	params->host_fd = static_cast<__wine_unix_ptr32_t>(static_cast<uint32_t>(AT_FDCWD) + 1);
+	return __WINE_UNIX_ERRNO_SUCCESS;
+}
+
 #endif // INTPTR_MAX >= INT64_MAX
 
 } // namespace
@@ -711,6 +729,7 @@ extern "C"
 		::__wine_unix::unix_write,
 		::__wine_unix::unix_read,
 		::__wine_unix::unix_get_std_host_fd,
+		::__wine_unix::unix_at_fdcwd,
 	};
 
 #if INTPTR_MAX >= INT64_MAX
@@ -728,6 +747,7 @@ extern "C"
 		::__wine_unix::wow64_unix_write,
 		::__wine_unix::wow64_unix_read,
 		::__wine_unix::wow64_unix_get_std_host_fd,
+		::__wine_unix::wow64_unix_at_fdcwd,
 	};
 #endif
 

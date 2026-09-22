@@ -19,6 +19,7 @@ EXPORTS
     __wine_unix_write_returns_status
     __wine_unix_read_returns_status
     __wine_unix_get_std_host_fd_returns_status
+    __wine_unix_at_fdcwd
     __wine_unix_host_fd_to_unix_fd
     __wine_unix_unix_fd_to_host_fd
     __wine_unix_host_fd_to_nt_handle

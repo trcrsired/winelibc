@@ -136,6 +136,14 @@ inline __wine_host_fd_t handle_to_host_fd(void *handle) noexcept
 	return static_cast<__wine_host_fd_t>(reinterpret_cast<::std::uintptr_t>(handle));
 }
 
+/* fast_io's nt_at_fdcwd sentinel HANDLE value */
+inline constexpr __wine_host_fd_t nt_at_fdcwd_value{static_cast<__wine_host_fd_t>(-3)};
+
+__wine_unix_host_fd_status_t nt_at_fdcwd() noexcept
+{
+	return {__WINE_UNIX_ERRNO_SUCCESS, nt_at_fdcwd_value};
+}
+
 /*
 The NT side has no unix path namespace; emulate it by mapping "/" onto a drive
 root: Z: under wine (its unix-filesystem drive), C: elsewhere. Detected once by
@@ -358,7 +366,7 @@ __wine_unix_host_fd_status_t nt_openat(__wine_host_fd_t host_dirfd, char const *
 	}
 	else
 	{
-		if (host_dirfd == 0)
+		if (host_dirfd == 0 || host_dirfd == nt_at_fdcwd_value)
 		{
 			rootdir = nt_current_directory_handle();
 		}
@@ -841,6 +849,11 @@ extern "C"
 	__wine_unix_get_std_host_fd_returns_status(int which) noexcept
 	{
 		return ::winelibc_nt::nt_get_std_host_fd(which);
+	}
+
+	__WINE_UNIX_API __WINE_UNIX_CONST __wine_host_fd_t __wine_unix_at_fdcwd(void) noexcept
+	{
+		return ::winelibc_nt::nt_at_fdcwd().host_fd;
 	}
 
 #if defined(__HERBCEPTIONS__)
