@@ -542,9 +542,9 @@ extern "C"
 	}
 } // extern "C"
 
-static_assert(sizeof(__wine_unix_call_funcs) / sizeof(__wine_unixlib_entry_t) == __wine_unix_funcs_count,
+static_assert(sizeof(__wine_unix_call_funcs) / sizeof(__wine_unixlib_entry_t) == __wine_unix_call_funcs_count,
 			  "__wine_unix_call_funcs must match the __wine_unix_funcs enum");
 #if INTPTR_MAX >= INT64_MAX
-static_assert(sizeof(__wine_unix_call_wow64_funcs) / sizeof(__wine_unixlib_entry_t) == __wine_unix_funcs_count,
+static_assert(sizeof(__wine_unix_call_wow64_funcs) / sizeof(__wine_unixlib_entry_t) == __wine_unix_call_funcs_count,
 			  "__wine_unix_call_wow64_funcs must match the __wine_unix_funcs enum");
 #endif

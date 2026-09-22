@@ -545,5 +545,5 @@ extern "C"
 	}
 }
 
-static_assert(sizeof(__wine_unix_call_funcs) / sizeof(__wine_unixlib_entry_t) == __wine_unix_funcs_count,
+static_assert(sizeof(__wine_unix_call_funcs) / sizeof(__wine_unixlib_entry_t) == __wine_unix_call_funcs_count,
 			  "__wine_unix_call_funcs must match the __wine_unix_funcs enum");

@@ -44,7 +44,8 @@ if(WINELIBC_NT_EMULATION OR WINELIBC_IMPORT_LIB)
 	set(WINELIBC_ABI_HEADERS
 		include/__wine_unix/__wine_unix.h
 		include/__wine_unix/__wine_unix_errno.h
-		include/__wine_unix/__wine_unix_fcntl.h)
+		include/__wine_unix/__wine_unix_fcntl.h
+		include/__wine_unix/__wine_unix_pe.h)
 endif()
 
 if(WINELIBC_NT_EMULATION)
@@ -57,7 +58,7 @@ if(WINELIBC_NT_EMULATION)
 		COMMENT "PE dll: winelibc_nt.dll (NT-emulation unixcall table)")
 
 	add_custom_command(OUTPUT ${CMAKE_BINARY_DIR}/winetest.exe
-		COMMAND ${WINELIBC_PE_CXX} ${WINELIBC_PE_CXXFLAGS_LIST}
+		COMMAND ${WINELIBC_PE_CXX} ${WINELIBC_PE_CXXFLAGS_LIST} -fherbceptions
 			-o ${CMAKE_BINARY_DIR}/winetest.exe
 			${CMAKE_CURRENT_SOURCE_DIR}/test/winetest.cc
 			-I${CMAKE_CURRENT_SOURCE_DIR}/include ${WINELIBC_PE_LIBS_LIST} -lkernel32

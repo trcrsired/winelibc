@@ -92,19 +92,19 @@ extern "C"
 	Call codes. The order MUST match the __wine_unix_call_funcs and
 	__wine_unix_call_wow64_funcs tables in unixhost.cc.
 	*/
-	enum __wine_unix_funcs
+	enum __wine_unix_calls
 	{
-		__wine_unix_host_fd_to_unix_fd,
-		__wine_unix_unix_fd_to_host_fd,
-		__wine_unix_host_fd_to_nt_handle,
-		__wine_unix_nt_handle_to_host_fd,
-		__wine_unix_openat,
-		__wine_unix_close,
-		__wine_unix_writev,
-		__wine_unix_readv,
-		__wine_unix_pwritev,
-		__wine_unix_preadv,
-		__wine_unix_funcs_count,
+		__wine_unix_call_host_fd_to_unix_fd,
+		__wine_unix_call_unix_fd_to_host_fd,
+		__wine_unix_call_host_fd_to_nt_handle,
+		__wine_unix_call_nt_handle_to_host_fd,
+		__wine_unix_call_openat,
+		__wine_unix_call_close,
+		__wine_unix_call_writev,
+		__wine_unix_call_readv,
+		__wine_unix_call_pwritev,
+		__wine_unix_call_preadv,
+		__wine_unix_call_funcs_count,
 	};
 
 	/*
@@ -268,18 +268,13 @@ extern "C"
 	extern __WINE_UNIX_DLLEXPORT __wine_unixlib_entry_t const __wine_unix_call_wow64_funcs[];
 #endif
 #else
-	/* PE side: ntdll-provided dispatcher. */
+	/*
+	PE side: ntdll's __wine_unix_call_dispatcher (a data export holding the
+	dispatcher address). unixlib_handle is the loaded unixlib's
+	__wine_unix_call_funcs table. Under winelibc_nt.dll the table is called
+	directly without a dispatcher. See __wine_unix_pe.h for the call api.
+	*/
 	typedef __wine_unix_status_t (__WINE_UNIX_DEFAULTCALL *__wine_unix_call_dispatcher_t)(__wine_unixlib_handle_t, unsigned int, void *);
-
-	extern __wine_unixlib_handle_t __wine_unixlib_handle;
-	extern __wine_unix_call_dispatcher_t __wine_unix_call_dispatcher;
-
-	static inline __wine_unix_status_t __wine_unix_call(unsigned int code, void *args) __WINE_UNIX_NOEXCEPT
-	{
-		return __wine_unix_call_dispatcher(__wine_unixlib_handle, code, args);
-	}
-
-#define __WINE_UNIX_CALL(code, args) __wine_unix_call((code), (args))
 #endif
 
 #ifdef __cplusplus
