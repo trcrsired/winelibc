@@ -500,6 +500,32 @@ inline void *process_heap() noexcept
 		peb + (sizeof(::std::size_t) == sizeof(::std::uint_least64_t) ? 0x30 : 0x18));
 }
 
+/*
+fast_io nt_get_stdhandle: PEB->ProcessParameters->Standard{Input,Output,Error}.
+ProcessParameters at peb+0x20 (64-bit) / +0x14 (32-bit); inside
+rtl_user_process_parameters the std handles sit at +0x20/+0x28/+0x30 (64-bit)
+or +0x18/+0x1c/+0x20 (32-bit).
+*/
+inline void *nt_get_std_handle(int which) noexcept
+{
+	if (which < 0 || 2 < which)
+	{
+		return nullptr;
+	}
+	constexpr ::std::size_t peb_process_parameters_off{
+		sizeof(::std::size_t) == sizeof(::std::uint_least64_t) ? 0x20 : 0x14};
+	constexpr ::std::size_t standard_input_off{
+		sizeof(::std::size_t) == sizeof(::std::uint_least64_t) ? 0x20 : 0x18};
+	auto *pparam{*reinterpret_cast<char **>(static_cast<char *>(nt_current_peb()) + peb_process_parameters_off)};
+	return *reinterpret_cast<void **>(pparam + standard_input_off +
+									  static_cast<::std::size_t>(which) * sizeof(void *));
+}
+
+__wine_unix_host_fd_status_t nt_get_std_host_fd(int which) noexcept
+{
+	return {__WINE_UNIX_ERRNO_SUCCESS, handle_to_host_fd(nt_get_std_handle(which))};
+}
+
 struct rwv_buffer
 {
 	char *ptr{};
@@ -811,6 +837,12 @@ extern "C"
 		return ::winelibc_nt::nt_preadv(host_fd, iovs, iovsize, offset);
 	}
 
+	__WINE_UNIX_API __WINE_UNIX_CONST __wine_unix_host_fd_status_t
+	__wine_unix_get_std_host_fd_returns_status(int which) noexcept
+	{
+		return ::winelibc_nt::nt_get_std_host_fd(which);
+	}
+
 #if defined(__HERBCEPTIONS__)
 
 	__WINE_UNIX_API int __wine_unix_host_fd_to_unix_fd(__wine_host_fd_t host_fd) return_failure{__wine_unix_errc}
@@ -921,6 +953,17 @@ extern "C"
 			return_failure static_cast<__wine_unix_errc>(r.status);
 		}
 		return {r.total, r.baseindex, r.index};
+	}
+
+	__WINE_UNIX_API __WINE_UNIX_CONST __wine_host_fd_t
+	__wine_unix_get_std_host_fd(int which) return_failure{__wine_unix_errc}
+	{
+		auto const r{__wine_unix_get_std_host_fd_returns_status(which)};
+		if (r.status != __WINE_UNIX_ERRNO_SUCCESS)
+		{
+			return_failure static_cast<__wine_unix_errc>(r.status);
+		}
+		return r.host_fd;
 	}
 
 #endif

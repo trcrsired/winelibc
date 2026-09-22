@@ -70,6 +70,7 @@ extern "C"
 		__wine_unix_call_readv,
 		__wine_unix_call_pwritev,
 		__wine_unix_call_preadv,
+		__wine_unix_call_get_std_host_fd,
 		__wine_unix_call_funcs_count,
 	};
 
@@ -132,6 +133,12 @@ extern "C"
 		size_t baseindex; /* output */
 		size_t index;	  /* output */
 	} __wine_unix_preadwritev_params;
+
+	typedef struct
+	{
+		int which;				  /* 0 stdin, 1 stdout, 2 stderr */
+		__wine_host_fd_t host_fd; /* output */
+	} __wine_unix_get_std_host_fd_params;
 
 	/*
 	wow64 (32-bit PE on a 64-bit host) variants. Explicitly packed so the layout
@@ -197,6 +204,12 @@ extern "C"
 		uint32_t baseindex;
 		uint32_t index;
 	} __wine_unix_preadwritev_params32;
+
+	typedef struct
+	{
+		int32_t which;
+		__wine_unix_ptr32_t host_fd;
+	} __wine_unix_get_std_host_fd_params32;
 #pragma pack(pop)
 
 	/* arch-selected params types: what a given side actually builds/passes. */
@@ -209,6 +222,7 @@ extern "C"
 	typedef __wine_unix_close_params32 __wine_unix_close_params_t;
 	typedef __wine_unix_readwritev_params32 __wine_unix_readwritev_params_t;
 	typedef __wine_unix_preadwritev_params32 __wine_unix_preadwritev_params_t;
+	typedef __wine_unix_get_std_host_fd_params32 __wine_unix_get_std_host_fd_params_t;
 #else
 	typedef __wine_unix_host_fd_to_unix_fd_params __wine_unix_host_fd_to_unix_fd_params_t;
 	typedef __wine_unix_unix_fd_to_host_fd_params __wine_unix_unix_fd_to_host_fd_params_t;
@@ -218,6 +232,7 @@ extern "C"
 	typedef __wine_unix_close_params __wine_unix_close_params_t;
 	typedef __wine_unix_readwritev_params __wine_unix_readwritev_params_t;
 	typedef __wine_unix_preadwritev_params __wine_unix_preadwritev_params_t;
+	typedef __wine_unix_get_std_host_fd_params __wine_unix_get_std_host_fd_params_t;
 #endif
 
 #ifdef WINE_UNIX_LIB

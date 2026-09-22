@@ -316,6 +316,17 @@ static __wine_unix_status_t unix_preadv(void *args) noexcept
 	});
 }
 
+static __wine_unix_status_t unix_get_std_host_fd(void *args) noexcept
+{
+	auto *params{static_cast<__wine_unix_get_std_host_fd_params_t *>(args)};
+	if (params->which < 0 || 2 < params->which)
+	{
+		return __WINE_UNIX_ERRNO_EINVAL;
+	}
+	params->host_fd = unix_fd_to_host_fd(params->which);
+	return __WINE_UNIX_ERRNO_SUCCESS;
+}
+
 #if INTPTR_MAX >= INT64_MAX
 /*
 wow64 (32-bit PE on a 64-bit host) wrappers. args points at a *_params32 struct laid
@@ -461,6 +472,17 @@ static __wine_unix_status_t wow64_unix_preadv(void *args) noexcept
 	return wow64_preadwritev_common(args, false);
 }
 
+static __wine_unix_status_t wow64_unix_get_std_host_fd(void *args) noexcept
+{
+	auto *params{static_cast<__wine_unix_get_std_host_fd_params32 *>(args)};
+	if (params->which < 0 || 2 < params->which)
+	{
+		return __WINE_UNIX_ERRNO_EINVAL;
+	}
+	params->host_fd = static_cast<__wine_unix_ptr32_t>(unix_fd_to_host_fd(params->which));
+	return __WINE_UNIX_ERRNO_SUCCESS;
+}
+
 #endif // INTPTR_MAX >= INT64_MAX
 
 } // namespace
@@ -524,6 +546,7 @@ extern "C"
 		::__wine_unix::unix_readv,
 		::__wine_unix::unix_pwritev,
 		::__wine_unix::unix_preadv,
+		::__wine_unix::unix_get_std_host_fd,
 	};
 
 #if INTPTR_MAX >= INT64_MAX
@@ -538,6 +561,7 @@ extern "C"
 		::__wine_unix::wow64_unix_readv,
 		::__wine_unix::wow64_unix_pwritev,
 		::__wine_unix::wow64_unix_preadv,
+		::__wine_unix::wow64_unix_get_std_host_fd,
 	};
 #endif
 

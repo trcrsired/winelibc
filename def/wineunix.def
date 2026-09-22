@@ -16,6 +16,7 @@ EXPORTS
     __wine_unix_readv_returns_status
     __wine_unix_pwritev_returns_status
     __wine_unix_preadv_returns_status
+    __wine_unix_get_std_host_fd_returns_status
     __wine_unix_host_fd_to_unix_fd
     __wine_unix_unix_fd_to_host_fd
     __wine_unix_host_fd_to_nt_handle
@@ -26,3 +27,4 @@ EXPORTS
     __wine_unix_readv
     __wine_unix_pwritev
     __wine_unix_preadv
+    __wine_unix_get_std_host_fd

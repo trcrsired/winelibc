@@ -196,6 +196,13 @@ extern "C"
 		return {st, p.total, p.baseindex, p.index};
 	}
 
+	__WINE_UNIX_API __WINE_UNIX_CONST __wine_unix_host_fd_status_t
+	__wine_unix_get_std_host_fd_returns_status(int which) noexcept
+	{
+		__wine_unix_get_std_host_fd_params_t p{which, 0};
+		return {call(__wine_unix_call_get_std_host_fd, &p), p.host_fd};
+	}
+
 #if defined(__HERBCEPTIONS__)
 
 	__WINE_UNIX_API int __wine_unix_host_fd_to_unix_fd(__wine_host_fd_t host_fd) return_failure{__wine_unix_errc}
@@ -306,6 +313,17 @@ extern "C"
 			return_failure static_cast<__wine_unix_errc>(r.status);
 		}
 		return {r.total, r.baseindex, r.index};
+	}
+
+	__WINE_UNIX_API __WINE_UNIX_CONST __wine_host_fd_t
+	__wine_unix_get_std_host_fd(int which) return_failure{__wine_unix_errc}
+	{
+		auto const r{__wine_unix_get_std_host_fd_returns_status(which)};
+		if (r.status != __WINE_UNIX_ERRNO_SUCCESS)
+		{
+			return_failure static_cast<__wine_unix_errc>(r.status);
+		}
+		return r.host_fd;
 	}
 
 #endif

@@ -39,6 +39,12 @@ private to the two modules; see __wine_unix_abi.h.
 #define __WINE_UNIX_API
 #endif
 
+#if defined(__GNUC__) || defined(__clang__)
+#define __WINE_UNIX_CONST __attribute__((__const__))
+#else
+#define __WINE_UNIX_CONST
+#endif
+
 #ifdef __cplusplus
 #if __cplusplus <= 201107
 #define __WINE_UNIX_NOEXCEPT throw()
@@ -144,20 +150,34 @@ extern "C"
 																			  size_t iovsize,
 																			  __wine_off_t offset) __WINE_UNIX_NOEXCEPT;
 
-#if defined(__cplusplus) && defined(__HERBCEPTIONS__)
+	/*
+	std streams: which is 0 stdin, 1 stdout, 2 stderr. unixcall impl returns
+	host_fd = which + 1; nt impl returns the process's Standard{Input,Output,
+	Error} handle from PEB->ProcessParameters.
+	*/
+	__WINE_UNIX_API __WINE_UNIX_CONST __wine_unix_host_fd_status_t
+		__wine_unix_get_std_host_fd_returns_status(int which) __WINE_UNIX_NOEXCEPT;
+
+#if defined(__cplusplus)
 }
 
+/*
+the errc enum exists for every c++ consumer: std::wine_errc when herbceptions
+is in play, otherwise an empty enum class so code can still name the type and
+cast status values to it.
+*/
 #if defined(__HERBCEPTIONS__) && __has_include(<herbceptions/error>)
 #include <herbceptions/error>
 using __wine_unix_errc = ::std::wine_errc;
 #else
-enum class __wine_unix_errc : ::std::uint_least32_t
+enum class __wine_unix_errc : uint_least32_t
 {
 };
 #endif
 
 extern "C"
 {
+#if defined(__HERBCEPTIONS__)
 	__WINE_UNIX_API int __wine_unix_host_fd_to_unix_fd(__wine_host_fd_t host_fd) return_failure{__wine_unix_errc};
 	__WINE_UNIX_API __wine_host_fd_t __wine_unix_unix_fd_to_host_fd(int unix_fd) return_failure{__wine_unix_errc};
 	__WINE_UNIX_API ptrdiff_t __wine_unix_host_fd_to_nt_handle(__wine_host_fd_t host_fd) return_failure{__wine_unix_errc};
@@ -181,6 +201,9 @@ extern "C"
 																__wine_unix_iovec_t const *iovs,
 																size_t iovsize,
 																__wine_off_t offset) return_failure{__wine_unix_errc};
+	__WINE_UNIX_API __WINE_UNIX_CONST __wine_host_fd_t
+		__wine_unix_get_std_host_fd(int which) return_failure{__wine_unix_errc};
+#endif
 #endif
 
 #ifdef __cplusplus
