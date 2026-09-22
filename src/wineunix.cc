@@ -93,14 +93,6 @@ __wine_unix_status_t call(unsigned int code, void *args) noexcept
 	return dispatcher(reinterpret_cast<__wine_unixlib_handle_t>(funcs), code, args);
 }
 
-/*
-Resolve the dispatch target once at dll startup — CRT init runs this during
-DLL_PROCESS_ATTACH — never per call. With no unixlib the dispatcher stays at
-enosys_dispatch, or the in-process nt table in a bundled build.
-*/
-#if defined(__GNUC__) || defined(__clang__)
-__attribute__((constructor))
-#endif
 void init_dispatch() noexcept
 {
 	if (resolve())
@@ -108,12 +100,28 @@ void init_dispatch() noexcept
 		return;
 	}
 #if defined(__WINE_UNIX_BUNDLED__)
+	/* no unixlib — run the in-process nt implementation instead */
 	funcs = nt_bundle_call_funcs;
 	dispatcher = nt_bundle_dispatch;
 #endif
 }
 
 } // namespace
+
+/*
+Dll startup: resolve the dispatch target once on DLL_PROCESS_ATTACH. Plain
+DllMain, not dllexport'd — the CRT's DllMainCRTStartup entry calls it, and
+nothing named DllMain lands in the import lib.
+*/
+extern "C" int32_t __stdcall DllMain(void *, uint32_t reason, void *) noexcept
+{
+	constexpr uint32_t dll_process_attach{1};
+	if (reason == dll_process_attach)
+	{
+		init_dispatch();
+	}
+	return 1;
+}
 
 extern "C"
 {
