@@ -61,37 +61,10 @@ struct io_status_block /* IO_STATUS_BLOCK */
 	uintptr_t Information;
 };
 
-struct rtl_user_process_parameters /* RTL_USER_PROCESS_PARAMETERS header */
-{
-	uint32_t MaximumLength;
-	uint32_t Length;
-	uint32_t Flags;
-	uint32_t DebugFlags;
-	void *ConsoleHandle;
-	uint32_t ConsoleFlags;
-	void *StandardInput;
-	void *StandardOutput;
-	void *StandardError;
-};
-
-struct peb /* PEB header */
-{
-	uint8_t InheritedAddressSpace;
-	uint8_t ReadImageFileExecOptions;
-	uint8_t BeingDebugged;
-	uint8_t SpareBool;
-	void *Mutant;
-	void *ImageBaseAddress;
-	void *Ldr;
-	rtl_user_process_parameters *ProcessParameters;
-};
-
 extern "C"
 {
 	__declspec(dllimport) int32_t __stdcall ntdll_NtClose(void *handle) noexcept
 		__WINE_UNIX_NT_RENAME(NtClose, 4);
-	__declspec(dllimport) int32_t __stdcall ntdll_NtCompareObjects(void *first, void *second) noexcept
-		__WINE_UNIX_NT_RENAME(NtCompareObjects, 8);
 	__declspec(dllimport) int32_t __stdcall ntdll_NtCreateFile(void **handle, uint32_t desired_access,
 															   object_attributes *objattr,
 															   io_status_block *iosb, int64_t *alloc_size,

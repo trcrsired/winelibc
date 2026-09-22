@@ -35,9 +35,39 @@ of the already-loaded copy without pulling a second one.
 */
 using wine_server_fd_to_handle_t = unsigned int(int, unsigned int, unsigned int, void **) noexcept;
 using wine_server_handle_to_fd_t = unsigned int(void *, unsigned int, int *, unsigned int *) noexcept;
+using rtl_get_current_peb_t = void *() noexcept;
+using nt_compare_objects_t = unsigned int(void *, void *) noexcept;
 
 static wine_server_fd_to_handle_t *wine_server_fd_to_handle_p;
 static wine_server_handle_to_fd_t *wine_server_handle_to_fd_p;
+static rtl_get_current_peb_t *rtl_get_current_peb_p;
+static nt_compare_objects_t *nt_compare_objects_p;
+
+/* 64-bit PEB/RTL_USER_PROCESS_PARAMETERS headers — unix side is always 64-bit */
+struct unix_rtl_user_process_parameters
+{
+	uint32_t MaximumLength;
+	uint32_t Length;
+	uint32_t Flags;
+	uint32_t DebugFlags;
+	void *ConsoleHandle;
+	uint32_t ConsoleFlags;
+	void *StandardInput;
+	void *StandardOutput;
+	void *StandardError;
+};
+
+struct unix_peb
+{
+	uint8_t InheritedAddressSpace;
+	uint8_t ReadImageFileExecOptions;
+	uint8_t BeingDebugged;
+	uint8_t SpareBool;
+	void *Mutant;
+	void *ImageBaseAddress;
+	void *Ldr;
+	unix_rtl_user_process_parameters *ProcessParameters;
+};
 
 namespace __wine_unix
 {
@@ -293,6 +323,43 @@ static __wine_unix_status_t unix_host_fd_to_nt_handle(void *args) noexcept
 	return __WINE_UNIX_ERRNO_SUCCESS;
 }
 
+/*
+If handle denotes one of the process's standard objects, return which slot
+(0/1/2), else -1. Console handles have no wineserver-visible fd — same
+fallback as wine's own spawn_process, which maps them to unix fds 0/1/2.
+NtCompareObjects catches handles duplicated onto the same console object.
+Only reached after wine_server_handle_to_fd fails, so a std slot repointed
+at a real file (SetStdHandle) still gets a proper fd for that object.
+*/
+static int unix_std_handle_which(void *handle) noexcept
+{
+	if (handle == nullptr || rtl_get_current_peb_p == nullptr)
+	{
+		return -1;
+	}
+	auto const *const pparam{
+		static_cast<unix_peb const *>(rtl_get_current_peb_p())->ProcessParameters};
+	void *const stds[3]{pparam->StandardInput, pparam->StandardOutput, pparam->StandardError};
+	for (int which{}; which != 3; ++which)
+	{
+		if (handle == stds[which])
+		{
+			return which;
+		}
+	}
+	if (nt_compare_objects_p != nullptr)
+	{
+		for (int which{}; which != 3; ++which)
+		{
+			if (stds[which] != nullptr && !nt_compare_objects_p(handle, stds[which]))
+			{
+				return which;
+			}
+		}
+	}
+	return -1;
+}
+
 static __wine_unix_status_t unix_nt_handle_to_host_fd(void *args) noexcept
 {
 	auto *params{static_cast<__wine_unix_nt_handle_to_host_fd_params *>(args)};
@@ -306,7 +373,13 @@ static __wine_unix_status_t unix_nt_handle_to_host_fd(void *args) noexcept
 	if (handle_to_fd(reinterpret_cast<void *>(static_cast<uintptr_t>(params->handle)),
 					 0, &unix_fd, nullptr))
 	{
-		return __WINE_UNIX_ERRNO_EBADF;
+		int const which{unix_std_handle_which(reinterpret_cast<void *>(static_cast<uintptr_t>(params->handle)))};
+		if (which < 0)
+		{
+			return __WINE_UNIX_ERRNO_EBADF;
+		}
+		params->host_fd = unix_fd_to_host_fd(which);
+		return __WINE_UNIX_ERRNO_SUCCESS;
 	}
 	params->host_fd = unix_fd_to_host_fd(unix_fd);
 	return __WINE_UNIX_ERRNO_SUCCESS;
@@ -496,11 +569,17 @@ static __wine_unix_status_t wow64_unix_nt_handle_to_host_fd(void *args) noexcept
 		return __WINE_UNIX_ERRNO_ENOSYS;
 	}
 	int unix_fd{};
-	if (handle_to_fd(reinterpret_cast<void *>(static_cast<uintptr_t>(
-						 static_cast<::std::uint_least32_t>(params->handle))),
-					 0, &unix_fd, nullptr))
+	auto *const handle{reinterpret_cast<void *>(
+		static_cast<uintptr_t>(static_cast<::std::uint_least32_t>(params->handle)))};
+	if (handle_to_fd(handle, 0, &unix_fd, nullptr))
 	{
-		return __WINE_UNIX_ERRNO_EBADF;
+		int const which{unix_std_handle_which(handle)};
+		if (which < 0)
+		{
+			return __WINE_UNIX_ERRNO_EBADF;
+		}
+		params->host_fd = static_cast<__wine_unix_ptr32_t>(unix_fd_to_host_fd(which));
+		return __WINE_UNIX_ERRNO_SUCCESS;
 	}
 	params->host_fd = static_cast<__wine_unix_ptr32_t>(unix_fd_to_host_fd(unix_fd));
 	return __WINE_UNIX_ERRNO_SUCCESS;
@@ -753,6 +832,10 @@ extern "C"
 				reinterpret_cast<wine_server_fd_to_handle_t *>(::dlsym(ntdll, "wine_server_fd_to_handle"));
 			wine_server_handle_to_fd_p =
 				reinterpret_cast<wine_server_handle_to_fd_t *>(::dlsym(ntdll, "wine_server_handle_to_fd"));
+			rtl_get_current_peb_p =
+				reinterpret_cast<rtl_get_current_peb_t *>(::dlsym(ntdll, "RtlGetCurrentPeb"));
+			nt_compare_objects_p =
+				reinterpret_cast<nt_compare_objects_t *>(::dlsym(ntdll, "NtCompareObjects"));
 		}
 		return __WINE_UNIX_ERRNO_SUCCESS;
 	}

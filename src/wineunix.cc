@@ -106,62 +106,6 @@ void init_dispatch() noexcept
 #endif
 }
 
-/*
-If handle denotes a standard console object, return which std slot it is
-(0/1/2), else -1. The unix side cannot turn console handles into host fds via
-wineserver — they map to the process's unix std fds instead. Duplicated
-handles (NtDuplicateObject) have a different value for the same object, so
-after the cheap value compare fall back to NtCompareObjects.
-*/
-int std_handle_which(void *handle) noexcept
-{
-	if (handle == nullptr)
-	{
-		return -1;
-	}
-	auto const *const pparam{
-		static_cast<peb const *>(ntdll_RtlGetCurrentPeb())->ProcessParameters};
-	void const *const stds[3]{pparam->StandardInput, pparam->StandardOutput, pparam->StandardError};
-	for (int which{}; which != 3; ++which)
-	{
-		if (handle == stds[which])
-		{
-			return which;
-		}
-	}
-	for (int which{}; which != 3; ++which)
-	{
-		if (stds[which] != nullptr && !ntdll_NtCompareObjects(handle, const_cast<void *>(stds[which])))
-		{
-			return which;
-		}
-	}
-	return -1;
-}
-
-__wine_unix_host_fd_status_t nt_handle_to_host_fd_common(ptrdiff_t handle) noexcept
-{
-	__wine_unix_nt_handle_to_host_fd_params_t p{handle, 0};
-	auto const status{call(__wine_unix_call_nt_handle_to_host_fd, &p)};
-	if (!status)
-	{
-		return {status, p.host_fd};
-	}
-	/*
-	The unix side cannot turn console handles into host fds — if this
-	handle denotes a standard console object, answer with the process's
-	std host fd instead. Checked only after the wineserver path fails so a
-	std slot that was repointed at a real file (SetStdHandle) still gets a
-	proper fd for that object.
-	*/
-	if (int const which{std_handle_which(reinterpret_cast<void *>(static_cast<uintptr_t>(handle)))}; which >= 0)
-	{
-		__wine_unix_get_std_host_fd_params_t sp{which, 0};
-		return {call(__wine_unix_call_get_std_host_fd, &sp), sp.host_fd};
-	}
-	return {status, p.host_fd};
-}
-
 } // namespace
 
 /*
@@ -209,8 +153,9 @@ extern "C"
 	__WINE_UNIX_API __wine_unix_host_fd_status_t
 	__wine_unix_nt_handle_to_host_fd_returns_status(ptrdiff_t handle) noexcept
 	{
-		auto const r{nt_handle_to_host_fd_common(handle)};
-		if (!r.status
+		__wine_unix_nt_handle_to_host_fd_params_t p{handle, 0};
+		auto const status{call(__wine_unix_call_nt_handle_to_host_fd, &p)};
+		if (!status
 #if defined(__WINE_UNIX_BUNDLED__)
 			/* nt dispatch: host_fd just encodes the handle — nothing to close */
 			&& funcs != nt_bundle_call_funcs
@@ -220,7 +165,7 @@ extern "C"
 			/* unixcall consumed the handle — the unix side dup'd it to a fresh fd */
 			ntdll_NtClose(reinterpret_cast<void *>(static_cast<uintptr_t>(handle)));
 		}
-		return r;
+		return {status, p.host_fd};
 	}
 
 	/*
@@ -235,7 +180,8 @@ extern "C"
 		{
 			return {__WINE_UNIX_ERRNO_SUCCESS, 0}; /* null handle -> empty host_fd */
 		}
-		return nt_handle_to_host_fd_common(handle);
+		__wine_unix_nt_handle_to_host_fd_params_t p{handle, 0};
+		return {call(__wine_unix_call_nt_handle_to_host_fd, &p), p.host_fd};
 	}
 
 	__WINE_UNIX_API __wine_unix_host_fd_status_t
