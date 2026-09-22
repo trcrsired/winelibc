@@ -14,7 +14,7 @@ project(winelibc CXX)
 # ---------------------------------------------------------------------------
 
 option(WINELIBC_UNIXLIB "build the host unixlib (fast_io_wine.so)" ON)
-option(WINELIBC_NT_EMULATION "build the NT-emulation PE dll + PE test exe" ON)
+option(WINELIBC_NT_EMULATION "build the NT-emulation PE dll + PE test exe" OFF)
 option(WINELIBC_IMPORT_LIB "generate libwinelibc_nt.a with llvm-dlltool" ON)
 
 # The PE side is compiled by a separate windows-targeting driver, not the

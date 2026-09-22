@@ -178,24 +178,23 @@ inline __wine_unix_status_t ntstatus_to_wine_errno(int32_t status) noexcept
 	}
 }
 
+/*
+host_fd encoding: on the unix side it is unix_fd + 1; on the NT side it is the
+raw windows HANDLE value (a valid HANDLE is never 0, so 0 still means "no fd").
+*/
 inline __wine_unix_status_t host_fd_to_handle(__wine_host_fd_t host_fd, void *&handle) noexcept
 {
-	handle = nullptr;
-	if (host_fd == 0)
+	handle = reinterpret_cast<void *>(static_cast<::std::uintptr_t>(host_fd));
+	if (handle == nullptr)
 	{
 		return __WINE_UNIX_ERRNO_EBADF;
 	}
-	handle = reinterpret_cast<void *>(static_cast<::std::uintptr_t>(host_fd - 1));
 	return __WINE_UNIX_ERRNO_SUCCESS;
 }
 
 inline __wine_host_fd_t handle_to_host_fd(void *handle) noexcept
 {
-	if (handle == nullptr)
-	{
-		return 0;
-	}
-	return static_cast<__wine_host_fd_t>(reinterpret_cast<::std::uintptr_t>(handle)) + 1;
+	return static_cast<__wine_host_fd_t>(reinterpret_cast<::std::uintptr_t>(handle));
 }
 
 /*
@@ -307,7 +306,7 @@ __wine_unix_status_t nt_host_fd_to_unix_fd(void *args) noexcept
 __wine_unix_status_t nt_unix_fd_to_host_fd(void *args) noexcept
 {
 	auto *params{static_cast<__wine_unix_unix_fd_to_host_fd_params_t *>(args)};
-	params->host_fd = params->unix_fd < 0 ? 0 : static_cast<__wine_host_fd_t>(params->unix_fd) + 1;
+	params->host_fd = params->unix_fd < 0 ? 0 : static_cast<__wine_host_fd_t>(params->unix_fd);
 	return __WINE_UNIX_ERRNO_SUCCESS;
 }
 

@@ -9,7 +9,6 @@ Run:
 	WINEDLLPATH=/home/cqwrteur/libraries/fast_io_kilo/winelibc wine winetest.exe
 */
 
-#include <cstdio>
 #include <cstdint>
 #include <cstddef>
 #include <cstring>
@@ -81,7 +80,6 @@ int main(int argc, char **argv)
 	auto ntdll_us{unicode_string(ntdll_name, 12)};
 	void *ntdll{};
 	auto st{LdrGetDllHandle(nullptr, nullptr, &ntdll_us, &ntdll)};
-	printf("LdrGetDllHandle: %lx %p\n", (unsigned long)(uint32_t)st, ntdll);
 	if (st || !ntdll)
 	{
 		return 1;
@@ -99,12 +97,10 @@ int main(int argc, char **argv)
 								 static_cast<uint16_t>(sizeof(disp_name)), disp_name};
 		void *disp_var{};
 		st = LdrGetProcedureAddress(ntdll, &disp_as, 0, &disp_var);
-		printf("LdrGetProcedureAddress: %lx %p\n", (unsigned long)(uint32_t)st, disp_var);
 		if (!st && disp_var)
 		{
 			dispatcher = *static_cast<__wine_unix_call_dispatcher_t *>(disp_var);
 		}
-		printf("dispatcher: %p\n", reinterpret_cast<void *>(dispatcher));
 	}
 
 	if (!force_nt && dispatcher != nullptr)
@@ -116,8 +112,6 @@ int main(int argc, char **argv)
 		size_t reslen{};
 		st = NtQueryVirtualMemory(reinterpret_cast<void *>(static_cast<uintptr_t>(-1)), &lib_us,
 								  MemoryWineLoadUnixLibByName, res, sizeof(res), &reslen);
-		printf("NtQueryVirtualMemory(load): %lx module=%llx funcs=%llx\n", (unsigned long)(uint32_t)st,
-			   (unsigned long long)res[0], (unsigned long long)res[1]);
 		if (!st && res[1])
 		{
 			funcs = reinterpret_cast<__wine_unixlib_entry_t const *>(static_cast<uintptr_t>(res[1]));
@@ -134,7 +128,6 @@ int main(int argc, char **argv)
 		auto emu_us{unicode_string(emu_name, 11)};
 		void *emu{};
 		st = LdrLoadDll(nullptr, nullptr, &emu_us, &emu);
-		printf("LdrLoadDll(winelibc_nt): %lx %p\n", (unsigned long)(uint32_t)st, emu);
 		if (st || !emu)
 		{
 			return 1;
@@ -144,7 +137,6 @@ int main(int argc, char **argv)
 								static_cast<uint16_t>(sizeof(tbl_name)), tbl_name};
 		void *tbl_var{};
 		st = LdrGetProcedureAddress(emu, &tbl_as, 0, &tbl_var);
-		printf("LdrGetProcedureAddress(funcs): %lx %p\n", (unsigned long)(uint32_t)st, tbl_var);
 		if (st || !tbl_var)
 		{
 			return 1;
@@ -160,7 +152,6 @@ int main(int argc, char **argv)
 	op.flags = __WINE_UNIX_O_WRONLY | __WINE_UNIX_O_CREAT | __WINE_UNIX_O_TRUNC;
 	op.mode = 0644;
 	st = unixcall(__wine_unix_openat, &op);
-	printf("openat: %ld host_fd=%llu\n", (long)st, (unsigned long long)op.host_fd);
 	if (st || !op.host_fd)
 	{
 		return 1;
@@ -176,8 +167,6 @@ int main(int argc, char **argv)
 	wp.iovs = iov;
 	wp.iovsize = 3;
 	st = unixcall(__wine_unix_writev, &wp);
-	printf("writev: %ld total=%llu baseindex=%llu index=%llu\n", (long)st, (unsigned long long)wp.total,
-		   (unsigned long long)wp.baseindex, (unsigned long long)wp.index);
 	if (st || wp.total != 16)
 	{
 		return 1;
@@ -186,7 +175,6 @@ int main(int argc, char **argv)
 	/* 6. close, reopen, readv-verify the bytes round-trip */
 	__wine_unix_close_params_t cp{op.host_fd};
 	st = unixcall(__wine_unix_close, &cp);
-	printf("close: %ld\n", (long)st);
 	if (st)
 	{
 		return 1;
@@ -195,7 +183,6 @@ int main(int argc, char **argv)
 	op.flags = __WINE_UNIX_O_RDONLY;
 	op.host_fd = 0;
 	st = unixcall(__wine_unix_openat, &op);
-	printf("openat(r): %ld host_fd=%llu\n", (long)st, (unsigned long long)op.host_fd);
 	if (st || !op.host_fd)
 	{
 		return 1;
@@ -207,15 +194,11 @@ int main(int argc, char **argv)
 	rp.iovs = &riov;
 	rp.iovsize = 1;
 	st = unixcall(__wine_unix_readv, &rp);
-	printf("readv: %ld total=%llu data=%.*s", (long)st, (unsigned long long)rp.total,
-		   (int)(rp.total ? rp.total : 0), buf);
 	cp.host_fd = op.host_fd;
 	st = unixcall(__wine_unix_close, &cp);
 	if (st || rp.total != 16 || std::memcmp(buf, "hello unix side\n", 16))
 	{
-		printf("VERIFY FAILED\n");
 		return 1;
 	}
-	printf("ALL PASS\n");
 	return 0;
 }

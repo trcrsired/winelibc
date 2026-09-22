@@ -107,7 +107,11 @@ extern "C"
 		__wine_unix_funcs_count,
 	};
 
-	/* host fds are stored with a +1 offset: 0 means "no fd". */
+	/*
+	host_fd is the backend's own descriptor encoding; 0 always means "no fd":
+	  unix side:     unix fd + 1
+	  nt-emulation:  raw windows HANDLE (never 0 when valid)
+	*/
 
 	typedef struct
 	{
