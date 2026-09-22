@@ -316,6 +316,40 @@ static __wine_unix_status_t unix_preadv(void *args) noexcept
 	});
 }
 
+static __wine_unix_status_t unix_write(void *args) noexcept
+{
+	auto *params{static_cast<__wine_unix_readwrite_params_t *>(args)};
+	int unix_fd{-1};
+	if (auto const errcode{host_fd_to_unix_fd(params->host_fd, unix_fd)}; errcode)
+	{
+		return errcode;
+	}
+	auto ret{::write(unix_fd, params->buf, static_cast<size_t>(params->len))};
+	if (ret == -1)
+	{
+		return host_errno_to_wine_errno(errno);
+	}
+	params->total = static_cast<decltype(params->total)>(ret);
+	return __WINE_UNIX_ERRNO_SUCCESS;
+}
+
+static __wine_unix_status_t unix_read(void *args) noexcept
+{
+	auto *params{static_cast<__wine_unix_readwrite_params_t *>(args)};
+	int unix_fd{-1};
+	if (auto const errcode{host_fd_to_unix_fd(params->host_fd, unix_fd)}; errcode)
+	{
+		return errcode;
+	}
+	auto ret{::read(unix_fd, params->buf, static_cast<size_t>(params->len))};
+	if (ret == -1)
+	{
+		return host_errno_to_wine_errno(errno);
+	}
+	params->total = static_cast<decltype(params->total)>(ret);
+	return __WINE_UNIX_ERRNO_SUCCESS;
+}
+
 static __wine_unix_status_t unix_get_std_host_fd(void *args) noexcept
 {
 	auto *params{static_cast<__wine_unix_get_std_host_fd_params_t *>(args)};
@@ -472,6 +506,28 @@ static __wine_unix_status_t wow64_unix_preadv(void *args) noexcept
 	return wow64_preadwritev_common(args, false);
 }
 
+static __wine_unix_status_t wow64_readwrite_common(void *args, bool write) noexcept
+{
+	auto *params32{static_cast<__wine_unix_readwrite_params32 *>(args)};
+	__wine_unix_readwrite_params params{};
+	params.host_fd = params32->host_fd;
+	params.buf = reinterpret_cast<void *>(static_cast<::std::uintptr_t>(params32->buf));
+	params.len = params32->len;
+	auto const errcode{(write ? unix_write : unix_read)(&params)};
+	params32->total = static_cast<uint32_t>(params.total);
+	return errcode;
+}
+
+static __wine_unix_status_t wow64_unix_write(void *args) noexcept
+{
+	return wow64_readwrite_common(args, true);
+}
+
+static __wine_unix_status_t wow64_unix_read(void *args) noexcept
+{
+	return wow64_readwrite_common(args, false);
+}
+
 static __wine_unix_status_t wow64_unix_get_std_host_fd(void *args) noexcept
 {
 	auto *params{static_cast<__wine_unix_get_std_host_fd_params32 *>(args)};
@@ -546,6 +602,8 @@ extern "C"
 		::__wine_unix::unix_readv,
 		::__wine_unix::unix_pwritev,
 		::__wine_unix::unix_preadv,
+		::__wine_unix::unix_write,
+		::__wine_unix::unix_read,
 		::__wine_unix::unix_get_std_host_fd,
 	};
 
@@ -561,6 +619,8 @@ extern "C"
 		::__wine_unix::wow64_unix_readv,
 		::__wine_unix::wow64_unix_pwritev,
 		::__wine_unix::wow64_unix_preadv,
+		::__wine_unix::wow64_unix_write,
+		::__wine_unix::wow64_unix_read,
 		::__wine_unix::wow64_unix_get_std_host_fd,
 	};
 #endif

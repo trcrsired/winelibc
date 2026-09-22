@@ -124,6 +124,18 @@ extern "C"
 		size_t index;
 	} __wine_unix_rwv_result_t;
 
+	typedef struct
+	{
+		__wine_unix_status_t status;
+		size_t total;
+	} __wine_unix_rw_status_t;
+
+	/* success-side value of the plain (non-vectored) read/write calls. */
+	typedef struct
+	{
+		size_t total;
+	} __wine_unix_rw_result_t;
+
 	__WINE_UNIX_API __wine_unix_unix_fd_status_t __wine_unix_host_fd_to_unix_fd_returns_status(__wine_host_fd_t host_fd) __WINE_UNIX_NOEXCEPT;
 	__WINE_UNIX_API __wine_unix_host_fd_status_t __wine_unix_unix_fd_to_host_fd_returns_status(int unix_fd) __WINE_UNIX_NOEXCEPT;
 	__WINE_UNIX_API __wine_unix_nt_handle_status_t __wine_unix_host_fd_to_nt_handle_returns_status(__wine_host_fd_t host_fd) __WINE_UNIX_NOEXCEPT;
@@ -149,6 +161,14 @@ extern "C"
 																			  __wine_unix_iovec_t const *iovs,
 																			  size_t iovsize,
 																			  __wine_off_t offset) __WINE_UNIX_NOEXCEPT;
+
+	/* plain read/write: read_some/write_some semantics, one host op. */
+	__WINE_UNIX_API __wine_unix_rw_status_t __wine_unix_write_returns_status(__wine_host_fd_t host_fd,
+																			void const *buf,
+																			size_t len) __WINE_UNIX_NOEXCEPT;
+	__WINE_UNIX_API __wine_unix_rw_status_t __wine_unix_read_returns_status(__wine_host_fd_t host_fd,
+																		   void *buf,
+																		   size_t len) __WINE_UNIX_NOEXCEPT;
 
 	/*
 	std streams: which is 0 stdin, 1 stdout, 2 stderr. unixcall impl returns
@@ -201,6 +221,10 @@ extern "C"
 																__wine_unix_iovec_t const *iovs,
 																size_t iovsize,
 																__wine_off_t offset) return_failure{__wine_unix_errc};
+	__WINE_UNIX_API __wine_unix_rw_result_t __wine_unix_write(__wine_host_fd_t host_fd, void const *buf,
+															size_t len) return_failure{__wine_unix_errc};
+	__WINE_UNIX_API __wine_unix_rw_result_t __wine_unix_read(__wine_host_fd_t host_fd, void *buf,
+														   size_t len) return_failure{__wine_unix_errc};
 	__WINE_UNIX_API __WINE_UNIX_CONST __wine_host_fd_t
 		__wine_unix_get_std_host_fd(int which) return_failure{__wine_unix_errc};
 #endif

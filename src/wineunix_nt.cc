@@ -768,6 +768,30 @@ __wine_unix_rwv_status_t nt_preadv(__wine_host_fd_t host_fd, __wine_unix_iovec_t
 	return nt_readv_common(host_fd, iovs, iovsize, __builtin_addressof(off));
 }
 
+__wine_unix_rw_status_t nt_write(__wine_host_fd_t host_fd, void const *buf, ::std::size_t len) noexcept
+{
+	void *handle{};
+	if (auto const err{host_fd_to_handle(host_fd, handle)}; err)
+	{
+		return {err, 0};
+	}
+	::std::size_t done{};
+	auto const st{nt_transfer(handle, const_cast<void *>(buf), len, nullptr, true, done)};
+	return {st, done};
+}
+
+__wine_unix_rw_status_t nt_read(__wine_host_fd_t host_fd, void *buf, ::std::size_t len) noexcept
+{
+	void *handle{};
+	if (auto const err{host_fd_to_handle(host_fd, handle)}; err)
+	{
+		return {err, 0};
+	}
+	::std::size_t done{};
+	auto const st{nt_transfer(handle, buf, len, nullptr, false, done)};
+	return {st, done};
+}
+
 } // namespace
 } // namespace winelibc_nt
 
@@ -835,6 +859,18 @@ extern "C"
 									  size_t iovsize, __wine_off_t offset) noexcept
 	{
 		return ::winelibc_nt::nt_preadv(host_fd, iovs, iovsize, offset);
+	}
+
+	__WINE_UNIX_API __wine_unix_rw_status_t
+	__wine_unix_write_returns_status(__wine_host_fd_t host_fd, void const *buf, size_t len) noexcept
+	{
+		return ::winelibc_nt::nt_write(host_fd, buf, len);
+	}
+
+	__WINE_UNIX_API __wine_unix_rw_status_t
+	__wine_unix_read_returns_status(__wine_host_fd_t host_fd, void *buf, size_t len) noexcept
+	{
+		return ::winelibc_nt::nt_read(host_fd, buf, len);
 	}
 
 	__WINE_UNIX_API __WINE_UNIX_CONST __wine_unix_host_fd_status_t
@@ -953,6 +989,28 @@ extern "C"
 			return_failure static_cast<__wine_unix_errc>(r.status);
 		}
 		return {r.total, r.baseindex, r.index};
+	}
+
+	__WINE_UNIX_API __wine_unix_rw_result_t __wine_unix_write(__wine_host_fd_t host_fd, void const *buf,
+															size_t len) return_failure{__wine_unix_errc}
+	{
+		auto const r{__wine_unix_write_returns_status(host_fd, buf, len)};
+		if (r.status != __WINE_UNIX_ERRNO_SUCCESS)
+		{
+			return_failure static_cast<__wine_unix_errc>(r.status);
+		}
+		return {r.total};
+	}
+
+	__WINE_UNIX_API __wine_unix_rw_result_t __wine_unix_read(__wine_host_fd_t host_fd, void *buf,
+														   size_t len) return_failure{__wine_unix_errc}
+	{
+		auto const r{__wine_unix_read_returns_status(host_fd, buf, len)};
+		if (r.status != __WINE_UNIX_ERRNO_SUCCESS)
+		{
+			return_failure static_cast<__wine_unix_errc>(r.status);
+		}
+		return {r.total};
 	}
 
 	__WINE_UNIX_API __WINE_UNIX_CONST __wine_host_fd_t
