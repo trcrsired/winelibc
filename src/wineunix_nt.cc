@@ -323,6 +323,85 @@ __wine_unix_host_fd_status_t nt_nt_handle_to_host_fd(ptrdiff_t handle) noexcept
 			handle_to_host_fd(reinterpret_cast<void *>(static_cast<::std::uintptr_t>(handle)))};
 }
 
+/*
+nt_get_current_peb, ported from fast_io's nt_preliminary_definition.h for every
+arch it supports. RtlGetCurrentPeb is the fallback where no direct read exists.
+*/
+inline void *nt_current_peb() noexcept
+{
+#if defined(__GNUC__) || defined(__clang__)
+#if defined(__aarch64__) || defined(__arm64ec__)
+	/* TEB is x18 on arm64; ProcessEnvironmentBlock at 0x60 */
+	return *reinterpret_cast<void **>(nt_current_teb_reg + 0x60);
+#elif defined(__i386__) || defined(__x86_64__)
+	if constexpr (sizeof(::std::size_t) == sizeof(::std::uint_least64_t))
+	{
+		void *peb;
+		__asm__("{movq\t%%gs:0x60, %0|mov\t%0, %%gs:[0x60]}" : "=r"(peb));
+		return peb;
+	}
+	else if constexpr (sizeof(::std::size_t) == sizeof(::std::uint_least32_t))
+	{
+		void *peb;
+		__asm__("{movl\t%%fs:0x30, %0|mov\t%0, %%fs:[0x30]}" : "=r"(peb));
+		return peb;
+	}
+	else
+	{
+		return RtlGetCurrentPeb();
+	}
+#else
+	if constexpr (sizeof(::std::size_t) == sizeof(::std::uint_least32_t))
+	{
+		char *teb;
+		__asm__("MRC p15, 0, %0, c13, c0, 2" : "=r"(teb));
+		return *reinterpret_cast<void **>(teb + 0x30);
+	}
+	else
+	{
+		return RtlGetCurrentPeb();
+	}
+#endif
+#elif defined(_MSC_VER)
+#if defined(_M_ARM64) || defined(_M_ARM64EC)
+	return *reinterpret_cast<void **>(reinterpret_cast<char *>(__getReg(18)) + 0x60);
+#elif defined(_M_AMD64)
+	return reinterpret_cast<void *>(__readgsqword(0x60));
+#elif defined(_M_IX86)
+	return reinterpret_cast<void *>(__readfsdword(0x30));
+#else
+	return *reinterpret_cast<void **>(
+		reinterpret_cast<char *>(_MoveFromCoprocessor(15, 0, 13, 0, 2)) + 0x30);
+#endif
+#else
+	return RtlGetCurrentPeb();
+#endif
+}
+
+/* fast_io rtl_get_process_heap: peb::ProcessHeap — 0x30 on 64-bit, 0x18 on 32-bit */
+inline void *process_heap() noexcept
+{
+	auto *peb{static_cast<char *>(nt_current_peb())};
+	return *reinterpret_cast<void **>(
+		peb + (sizeof(::std::size_t) == sizeof(::std::uint_least64_t) ? 0x30 : 0x18));
+}
+
+/*
+PEB->ProcessParameters->CurrentDirectory.Handle: the process's nt cwd
+directory handle, RootDirectory for relative opens when the abi asks for
+cwd (host_dirfd == 0). curdir::Handle sits at +0x48 inside
+rtl_user_process_parameters on 64-bit, +0x2c on 32-bit.
+*/
+inline void *nt_current_directory_handle() noexcept
+{
+	constexpr ::std::size_t peb_process_parameters_off{
+		sizeof(::std::size_t) == sizeof(::std::uint_least64_t) ? 0x20 : 0x14};
+	constexpr ::std::size_t curdir_handle_off{
+		sizeof(::std::size_t) == sizeof(::std::uint_least64_t) ? 0x48 : 0x2c};
+	auto *pparam{*reinterpret_cast<char **>(static_cast<char *>(nt_current_peb()) + peb_process_parameters_off)};
+	return *reinterpret_cast<void **>(pparam + curdir_handle_off);
+}
+
 __wine_unix_host_fd_status_t nt_openat(__wine_host_fd_t host_dirfd, char const *filename,
 									   ::std::size_t filenamelen, __wine_host_flags_t flags,
 									   __wine_host_mode_t mode) noexcept
@@ -331,13 +410,18 @@ __wine_unix_host_fd_status_t nt_openat(__wine_host_fd_t host_dirfd, char const *
 	unicode_string us{0, static_cast<uint16_t>(sizeof(ntbfr)), ntbfr};
 	void *rootdir{};
 	::std::size_t wlen{};
-	if (host_dirfd == 0)
+	if (filenamelen != 0 && filename[0] == u8'/')
 	{
+		/* absolute path ignores the dirfd, like openat */
 		wlen = unix_abs_to_nt(filename, filenamelen, ntbfr, nt_path_max - 1);
 	}
 	else
 	{
-		if (auto const err{host_fd_to_handle(host_dirfd, rootdir)}; err)
+		if (host_dirfd == 0)
+		{
+			rootdir = nt_current_directory_handle();
+		}
+		else if (auto const err{host_fd_to_handle(host_dirfd, rootdir)}; err)
 		{
 			return {err, 0};
 		}
@@ -436,69 +520,6 @@ FILE_NO_INTERMEDIATE_BUFFERING handles), so calls with more than one iovec are
 gathered/scattered through one process-heap buffer — the RtlAllocateHeap
 staging fast_io uses for its nt/win32 scatter buffer logic.
 */
-
-/*
-nt_get_current_peb, ported from fast_io's nt_preliminary_definition.h for every
-arch it supports. RtlGetCurrentPeb is the fallback where no direct read exists.
-*/
-inline void *nt_current_peb() noexcept
-{
-#if defined(__GNUC__) || defined(__clang__)
-#if defined(__aarch64__) || defined(__arm64ec__)
-	/* TEB is x18 on arm64; ProcessEnvironmentBlock at 0x60 */
-	return *reinterpret_cast<void **>(nt_current_teb_reg + 0x60);
-#elif defined(__i386__) || defined(__x86_64__)
-	if constexpr (sizeof(::std::size_t) == sizeof(::std::uint_least64_t))
-	{
-		void *peb;
-		__asm__("{movq\t%%gs:0x60, %0|mov\t%0, %%gs:[0x60]}" : "=r"(peb));
-		return peb;
-	}
-	else if constexpr (sizeof(::std::size_t) == sizeof(::std::uint_least32_t))
-	{
-		void *peb;
-		__asm__("{movl\t%%fs:0x30, %0|mov\t%0, %%fs:[0x30]}" : "=r"(peb));
-		return peb;
-	}
-	else
-	{
-		return RtlGetCurrentPeb();
-	}
-#else
-	if constexpr (sizeof(::std::size_t) == sizeof(::std::uint_least32_t))
-	{
-		char *teb;
-		__asm__("MRC p15, 0, %0, c13, c0, 2" : "=r"(teb));
-		return *reinterpret_cast<void **>(teb + 0x30);
-	}
-	else
-	{
-		return RtlGetCurrentPeb();
-	}
-#endif
-#elif defined(_MSC_VER)
-#if defined(_M_ARM64) || defined(_M_ARM64EC)
-	return *reinterpret_cast<void **>(reinterpret_cast<char *>(__getReg(18)) + 0x60);
-#elif defined(_M_AMD64)
-	return reinterpret_cast<void *>(__readgsqword(0x60));
-#elif defined(_M_IX86)
-	return reinterpret_cast<void *>(__readfsdword(0x30));
-#else
-	return *reinterpret_cast<void **>(
-		reinterpret_cast<char *>(_MoveFromCoprocessor(15, 0, 13, 0, 2)) + 0x30);
-#endif
-#else
-	return RtlGetCurrentPeb();
-#endif
-}
-
-/* fast_io rtl_get_process_heap: peb::ProcessHeap — 0x30 on 64-bit, 0x18 on 32-bit */
-inline void *process_heap() noexcept
-{
-	auto *peb{static_cast<char *>(nt_current_peb())};
-	return *reinterpret_cast<void **>(
-		peb + (sizeof(::std::size_t) == sizeof(::std::uint_least64_t) ? 0x30 : 0x18));
-}
 
 /*
 fast_io nt_get_stdhandle: PEB->ProcessParameters->Standard{Input,Output,Error}.
