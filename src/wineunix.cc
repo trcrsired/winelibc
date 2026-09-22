@@ -78,9 +78,9 @@ bool resolve() noexcept
 	variable's address; dereference once for the callable pointer. Absent on
 	real windows.
 	*/
-	char disp_name[] = "__wine_unix_call_dispatcher";
+	char8_t disp_name[] = u8"__wine_unix_call_dispatcher";
 	ansi_string disp_as{static_cast<uint16_t>(sizeof(disp_name) - 1),
-						static_cast<uint16_t>(sizeof(disp_name)), disp_name};
+						static_cast<uint16_t>(sizeof(disp_name)), reinterpret_cast<char*>(disp_name)};
 	void *disp_var{};
 	if (LdrGetProcedureAddress(ntdll, &disp_as, 0, &disp_var) || disp_var == nullptr)
 	{
