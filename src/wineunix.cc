@@ -141,13 +141,25 @@ int std_handle_which(void *handle) noexcept
 
 __wine_unix_host_fd_status_t nt_handle_to_host_fd_common(ptrdiff_t handle) noexcept
 {
+	__wine_unix_nt_handle_to_host_fd_params_t p{handle, 0};
+	auto const status{call(__wine_unix_call_nt_handle_to_host_fd, &p)};
+	if (!status)
+	{
+		return {status, p.host_fd};
+	}
+	/*
+	The unix side cannot turn console handles into host fds — if this
+	handle denotes a standard console object, answer with the process's
+	std host fd instead. Checked only after the wineserver path fails so a
+	std slot that was repointed at a real file (SetStdHandle) still gets a
+	proper fd for that object.
+	*/
 	if (int const which{std_handle_which(reinterpret_cast<void *>(static_cast<uintptr_t>(handle)))}; which >= 0)
 	{
-		__wine_unix_get_std_host_fd_params_t p{which, 0};
-		return {call(__wine_unix_call_get_std_host_fd, &p), p.host_fd};
+		__wine_unix_get_std_host_fd_params_t sp{which, 0};
+		return {call(__wine_unix_call_get_std_host_fd, &sp), sp.host_fd};
 	}
-	__wine_unix_nt_handle_to_host_fd_params_t p{handle, 0};
-	return {call(__wine_unix_call_nt_handle_to_host_fd, &p), p.host_fd};
+	return {status, p.host_fd};
 }
 
 } // namespace
