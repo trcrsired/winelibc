@@ -28,8 +28,14 @@ namespace
 
 inline constexpr uint32_t memory_wine_load_unix_lib_by_name{1002};
 
+__wine_unix_status_t __WINE_UNIX_DEFAULTCALL enosys_dispatch(__wine_unixlib_handle_t, unsigned int,
+															 void *) noexcept
+{
+	return __WINE_UNIX_ERRNO_ENOSYS;
+}
+
 __wine_unixlib_entry_t const *funcs;
-__wine_unix_call_dispatcher_t dispatcher;
+__wine_unix_call_dispatcher_t dispatcher{enosys_dispatch};
 
 #if defined(__WINE_UNIX_BUNDLED__)
 /*
@@ -84,18 +90,27 @@ bool resolve() noexcept
 
 __wine_unix_status_t call(unsigned int code, void *args) noexcept
 {
-	static bool const ok{resolve()};
-	if (!ok)
-	{
-#if defined(__WINE_UNIX_BUNDLED__)
-		/* no unixlib — run the in-process nt implementation instead */
-		funcs = nt_bundle_call_funcs;
-		dispatcher = nt_bundle_dispatch;
-#else
-		return __WINE_UNIX_ERRNO_ENOSYS;
-#endif
-	}
 	return dispatcher(reinterpret_cast<__wine_unixlib_handle_t>(funcs), code, args);
+}
+
+/*
+Resolve the dispatch target once at dll startup — CRT init runs this during
+DLL_PROCESS_ATTACH — never per call. With no unixlib the dispatcher stays at
+enosys_dispatch, or the in-process nt table in a bundled build.
+*/
+#if defined(__GNUC__) || defined(__clang__)
+__attribute__((constructor))
+#endif
+void init_dispatch() noexcept
+{
+	if (resolve())
+	{
+		return;
+	}
+#if defined(__WINE_UNIX_BUNDLED__)
+	funcs = nt_bundle_call_funcs;
+	dispatcher = nt_bundle_dispatch;
+#endif
 }
 
 } // namespace

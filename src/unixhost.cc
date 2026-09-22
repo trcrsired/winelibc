@@ -24,41 +24,20 @@ See dlls/ntdll/unix/virtual.c in the wine source.
 #include <unistd.h>
 
 /*
-ntdll.so unix exports — wineserver-backed fd <-> HANDLE conversion. Resolved with
-dlsym at first use — no DT_NEEDED and no wine libdir path needed. The handles
-they make live in the PE process's own handle table — unixlibs run inside it.
+ntdll.so unix exports — wineserver-backed fd <-> HANDLE conversion. Resolved
+once by __wine_unix_lib_init — no DT_NEEDED and no wine libdir path needed.
+The handles they make live in the PE process's own handle table — unixlibs
+run inside it.
+
+ntdll.so is already mapped (it dlopen'd us) but RTLD_LOCAL, so RTLD_DEFAULT
+cannot see its exports. dlopen by soname with RTLD_NOLOAD returns the handle
+of the already-loaded copy without pulling a second one.
 */
 using wine_server_fd_to_handle_t = unsigned int(int, unsigned int, unsigned int, void **) noexcept;
 using wine_server_handle_to_fd_t = unsigned int(void *, unsigned int, int *, unsigned int *) noexcept;
 
-/*
-ntdll.so is already mapped (it dlopen'd us) but RTLD_LOCAL, so RTLD_DEFAULT
-cannot see its exports. dlopen by soname with RTLD_NOLOAD returns the handle of
-the already-loaded copy without pulling a second one.
-*/
-inline void *loaded_ntdll_so() noexcept
-{
-	static void *const p{::dlopen("ntdll.so", RTLD_NOW | RTLD_LOCAL | RTLD_NOLOAD)};
-	return p;
-}
-
-inline wine_server_fd_to_handle_t *resolve_wine_server_fd_to_handle() noexcept
-{
-	static void *const ntdll{loaded_ntdll_so()};
-	static auto *const p{ntdll ? reinterpret_cast<wine_server_fd_to_handle_t *>(
-									 ::dlsym(ntdll, "wine_server_fd_to_handle"))
-							   : nullptr};
-	return p;
-}
-
-inline wine_server_handle_to_fd_t *resolve_wine_server_handle_to_fd() noexcept
-{
-	static void *const ntdll{loaded_ntdll_so()};
-	static auto *const p{ntdll ? reinterpret_cast<wine_server_handle_to_fd_t *>(
-									 ::dlsym(ntdll, "wine_server_handle_to_fd"))
-							   : nullptr};
-	return p;
-}
+static wine_server_fd_to_handle_t *wine_server_fd_to_handle_p;
+static wine_server_handle_to_fd_t *wine_server_handle_to_fd_p;
 
 namespace __wine_unix
 {
@@ -299,7 +278,7 @@ static __wine_unix_status_t unix_host_fd_to_nt_handle(void *args) noexcept
 	{
 		return errcode;
 	}
-	auto *const fd_to_handle{resolve_wine_server_fd_to_handle()};
+	auto *const fd_to_handle{wine_server_fd_to_handle_p};
 	if (fd_to_handle == nullptr)
 	{
 		return __WINE_UNIX_ERRNO_ENOSYS;
@@ -318,7 +297,7 @@ static __wine_unix_status_t unix_host_fd_to_nt_handle(void *args) noexcept
 static __wine_unix_status_t unix_nt_handle_to_host_fd(void *args) noexcept
 {
 	auto *params{static_cast<__wine_unix_nt_handle_to_host_fd_params *>(args)};
-	auto *const handle_to_fd{resolve_wine_server_handle_to_fd()};
+	auto *const handle_to_fd{wine_server_handle_to_fd_p};
 	if (handle_to_fd == nullptr)
 	{
 		return __WINE_UNIX_ERRNO_ENOSYS;
@@ -485,7 +464,7 @@ static __wine_unix_status_t wow64_unix_host_fd_to_nt_handle(void *args) noexcept
 	{
 		return errcode;
 	}
-	auto *const fd_to_handle{resolve_wine_server_fd_to_handle()};
+	auto *const fd_to_handle{wine_server_fd_to_handle_p};
 	if (fd_to_handle == nullptr)
 	{
 		return __WINE_UNIX_ERRNO_ENOSYS;
@@ -504,7 +483,7 @@ static __wine_unix_status_t wow64_unix_host_fd_to_nt_handle(void *args) noexcept
 static __wine_unix_status_t wow64_unix_nt_handle_to_host_fd(void *args) noexcept
 {
 	auto *params{static_cast<__wine_unix_nt_handle_to_host_fd_params32 *>(args)};
-	auto *const handle_to_fd{resolve_wine_server_handle_to_fd()};
+	auto *const handle_to_fd{wine_server_handle_to_fd_p};
 	if (handle_to_fd == nullptr)
 	{
 		return __WINE_UNIX_ERRNO_ENOSYS;
@@ -753,6 +732,14 @@ extern "C"
 
 	__wine_unix_status_t __wine_unix_lib_init(void) noexcept
 	{
+		/* resolve the wineserver conversion entry points once, at .so load */
+		if (void *const ntdll{::dlopen("ntdll.so", RTLD_NOW | RTLD_LOCAL | RTLD_NOLOAD)})
+		{
+			wine_server_fd_to_handle_p =
+				reinterpret_cast<wine_server_fd_to_handle_t *>(::dlsym(ntdll, "wine_server_fd_to_handle"));
+			wine_server_handle_to_fd_p =
+				reinterpret_cast<wine_server_handle_to_fd_t *>(::dlsym(ntdll, "wine_server_handle_to_fd"));
+		}
 		return __WINE_UNIX_ERRNO_SUCCESS;
 	}
 } // extern "C"
