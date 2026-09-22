@@ -27,7 +27,7 @@ dlopen of the .so and dlsym's "__wine_unix_call_funcs" (see
 dlls/ntdll/unix/virtual.c).
 */
 
-#include "__wine_unix.h"
+#include <__wine_unix/__wine_unix.h>
 
 #if defined(_WIN32) && !defined(__WINE__) || defined(__CYGWIN__)
 #define __WINE_UNIX_DEFAULTCALL __stdcall

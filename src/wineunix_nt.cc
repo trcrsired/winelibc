@@ -14,6 +14,8 @@ windows.
 
 #include <__wine_unix/__wine_unix.h>
 
+#include "ntdll_imports.h"
+
 #include <cstdint>
 #include <cstddef>
 #include <type_traits>
@@ -33,117 +35,53 @@ register char *nt_current_teb_reg __asm__("x18");
 namespace
 {
 
-/* ---- minimal NT declarations (ntdll.lib) ------------------------------- */
+inline constexpr uint32_t nt_status_success{0};
+inline constexpr uint32_t obj_case_insensitive{0x40};
 
-struct unicode_string
-{
-	uint16_t Length;
-	uint16_t MaximumLength;
-	char16_t *Buffer;
-};
+inline constexpr uint32_t file_read_data{0x0001};
+inline constexpr uint32_t file_write_data{0x0002};
+inline constexpr uint32_t file_append_data{0x0004};
+inline constexpr uint32_t file_read_attributes{0x0080};
+inline constexpr uint32_t file_write_attributes{0x0100};
+inline constexpr uint32_t delete_access{0x00010000};
+inline constexpr uint32_t synchronize{0x00100000};
 
-struct ansi_string
-{
-	uint16_t Length;
-	uint16_t MaximumLength;
-	char *Buffer;
-};
+inline constexpr uint32_t file_share_read{0x00000001};
+inline constexpr uint32_t file_share_write{0x00000002};
+inline constexpr uint32_t file_share_delete{0x00000004};
 
-struct object_attributes
-{
-	uint32_t Length;
-	void *RootDirectory;
-	unicode_string *ObjectName;
-	uint32_t Attributes;
-	void *SecurityDescriptor;
-	void *SecurityQualityOfService;
-};
+inline constexpr uint32_t file_open{0x00000001};
+inline constexpr uint32_t file_create{0x00000002};
+inline constexpr uint32_t file_open_if{0x00000003};
+inline constexpr uint32_t file_overwrite{0x00000004};
+inline constexpr uint32_t file_overwrite_if{0x00000005};
 
-struct io_status_block
-{
-	union
-	{
-		int32_t Status;
-		void *Pointer;
-	};
-	uintptr_t Information;
-};
+inline constexpr uint32_t file_directory_file{0x00000001};
+inline constexpr uint32_t file_write_through{0x00000002};
+inline constexpr uint32_t file_no_intermediate_buffering{0x00000008};
+inline constexpr uint32_t file_synchronous_io_nonalert{0x00000020};
+inline constexpr uint32_t file_non_directory_file{0x00000040};
+inline constexpr uint32_t file_delete_on_close{0x00001000};
+inline constexpr uint32_t file_open_reparse_point{0x00200000};
+inline constexpr uint32_t file_open_for_backup_intent{0x00004000};
 
-extern "C"
-{
-	__declspec(dllimport) int32_t __stdcall NtCreateFile(void **handle, uint32_t desired_access,
-													   object_attributes *objattr, io_status_block *iosb,
-													   int64_t *alloc_size, uint32_t file_attributes,
-													   uint32_t share_access, uint32_t create_disposition,
-													   uint32_t create_options, void *ea_buffer,
-													   uint32_t ea_length) noexcept;
-	__declspec(dllimport) int32_t __stdcall NtReadFile(void *handle, void *event, void *apc_routine,
-													 void *apc_context, io_status_block *iosb, void *buffer,
-													 uint32_t length, int64_t *byte_offset,
-													 uint32_t *key) noexcept;
-	__declspec(dllimport) int32_t __stdcall NtWriteFile(void *handle, void *event, void *apc_routine,
-													  void *apc_context, io_status_block *iosb, void const *buffer,
-													  uint32_t length, int64_t *byte_offset,
-													  uint32_t *key) noexcept;
-	__declspec(dllimport) int32_t __stdcall NtClose(void *handle) noexcept;
-	__declspec(dllimport) void *__stdcall RtlAllocateHeap(void *heap, uint32_t flags, uintptr_t size) noexcept;
-	__declspec(dllimport) int __stdcall RtlFreeHeap(void *heap, uint32_t flags, void *ptr) noexcept;
-	__declspec(dllimport) void *__stdcall RtlGetCurrentPeb() noexcept;
-	__declspec(dllimport) void __stdcall RtlInitUnicodeString(unicode_string *dst,
-															char16_t const *src) noexcept;
-	__declspec(dllimport) int32_t __stdcall LdrGetDllHandle(char16_t const *path, uint32_t *characteristics,
-														  unicode_string *name, void **handle) noexcept;
-	__declspec(dllimport) int32_t __stdcall LdrGetProcedureAddress(void *handle, ansi_string const *name,
-																 uint32_t ordinal, void **proc) noexcept;
-}
+inline constexpr uint32_t file_attribute_normal{0x00000080};
 
-constexpr uint32_t nt_status_success{0};
-constexpr uint32_t obj_case_insensitive{0x40};
-
-constexpr uint32_t file_read_data{0x0001};
-constexpr uint32_t file_write_data{0x0002};
-constexpr uint32_t file_append_data{0x0004};
-constexpr uint32_t file_read_attributes{0x0080};
-constexpr uint32_t file_write_attributes{0x0100};
-constexpr uint32_t delete_access{0x00010000};
-constexpr uint32_t synchronize{0x00100000};
-
-constexpr uint32_t file_share_read{0x00000001};
-constexpr uint32_t file_share_write{0x00000002};
-constexpr uint32_t file_share_delete{0x00000004};
-
-constexpr uint32_t file_open{0x00000001};
-constexpr uint32_t file_create{0x00000002};
-constexpr uint32_t file_open_if{0x00000003};
-constexpr uint32_t file_overwrite{0x00000004};
-constexpr uint32_t file_overwrite_if{0x00000005};
-
-constexpr uint32_t file_directory_file{0x00000001};
-constexpr uint32_t file_write_through{0x00000002};
-constexpr uint32_t file_no_intermediate_buffering{0x00000008};
-constexpr uint32_t file_synchronous_io_nonalert{0x00000020};
-constexpr uint32_t file_non_directory_file{0x00000040};
-constexpr uint32_t file_delete_on_close{0x00001000};
-constexpr uint32_t file_open_reparse_point{0x00200000};
-constexpr uint32_t file_open_for_backup_intent{0x00004000};
-
-constexpr uint32_t file_attribute_normal{0x00000080};
-
-constexpr uint32_t status_object_name_not_found{0xC0000034};
-constexpr uint32_t status_object_path_not_found{0xC000003A};
-constexpr uint32_t status_object_name_collision{0xC0000035};
-constexpr uint32_t status_access_denied{0xC0000022};
-constexpr uint32_t status_sharing_violation{0xC0000043};
-constexpr uint32_t status_invalid_parameter{0xC000000D};
-constexpr uint32_t status_invalid_handle{0xC0000008};
-constexpr uint32_t status_not_a_directory{0xC0000103};
-constexpr uint32_t status_file_is_a_directory{0xC00000BA};
-constexpr uint32_t status_name_too_long{0xC0000106};
-constexpr uint32_t status_disk_full{0xC000007F};
-constexpr uint32_t status_insufficient_resources{0xC000009A};
+inline constexpr uint32_t status_object_name_not_found{0xC0000034};
+inline constexpr uint32_t status_object_path_not_found{0xC000003A};
+inline constexpr uint32_t status_object_name_collision{0xC0000035};
+inline constexpr uint32_t status_access_denied{0xC0000022};
+inline constexpr uint32_t status_sharing_violation{0xC0000043};
+inline constexpr uint32_t status_invalid_parameter{0xC000000D};
+inline constexpr uint32_t status_invalid_handle{0xC0000008};
+inline constexpr uint32_t status_not_a_directory{0xC0000103};
+inline constexpr uint32_t status_file_is_a_directory{0xC00000BA};
+inline constexpr uint32_t status_name_too_long{0xC0000106};
+inline constexpr uint32_t status_disk_full{0xC000007F};
+inline constexpr uint32_t status_insufficient_resources{0xC000009A};
 /* read-side EOF statuses: a short/empty result, not an error */
-constexpr uint32_t status_end_of_file{0xC0000011};
-constexpr uint32_t status_pipe_broken{0xC000014B};
+inline constexpr uint32_t status_end_of_file{0xC0000011};
+inline constexpr uint32_t status_pipe_broken{0xC000014B};
 
 inline __wine_unix_status_t ntstatus_to_wine_errno(int32_t status) noexcept
 {
@@ -209,14 +147,14 @@ inline char16_t unix_root_drive() noexcept
 		char16_t ntdll_name[] = u"ntdll.dll";
 		unicode_string us{static_cast<uint16_t>(24), static_cast<uint16_t>(26), ntdll_name};
 		void *ntdll{};
-		if (LdrGetDllHandle(nullptr, nullptr, &us, &ntdll))
+		if (ntdll_LdrGetDllHandle(nullptr, nullptr, &us, &ntdll))
 		{
 			return u'C';
 		}
 		char probe[] = "wine_get_version";
 		ansi_string as{static_cast<uint16_t>(sizeof(probe) - 1), static_cast<uint16_t>(sizeof(probe)), probe};
 		void *proc{};
-		if (LdrGetProcedureAddress(ntdll, &as, 0, &proc) || proc == nullptr)
+		if (ntdll_LdrGetProcedureAddress(ntdll, &as, 0, &proc) || proc == nullptr)
 		{
 			return u'C';
 		}
@@ -225,7 +163,7 @@ inline char16_t unix_root_drive() noexcept
 	return drive;
 }
 
-constexpr ::std::size_t nt_path_max{4096};
+inline constexpr ::std::size_t nt_path_max{4096};
 
 /* unix relative path -> NT path relative to RootDirectory. returns wchar count or 0 */
 inline ::std::size_t unix_rel_to_nt(char const *filename, ::std::size_t filenamelen, char16_t *out,
@@ -328,7 +266,7 @@ __wine_unix_host_fd_status_t nt_nt_handle_to_host_fd(ptrdiff_t handle) noexcept
 
 /*
 nt_get_current_peb, ported from fast_io's nt_preliminary_definition.h for every
-arch it supports. RtlGetCurrentPeb is the fallback where no direct read exists.
+arch it supports. ntdll_RtlGetCurrentPeb is the fallback where no direct read exists.
 */
 inline void *nt_current_peb() noexcept
 {
@@ -351,7 +289,7 @@ inline void *nt_current_peb() noexcept
 	}
 	else
 	{
-		return RtlGetCurrentPeb();
+		return ntdll_RtlGetCurrentPeb();
 	}
 #else
 	if constexpr (sizeof(::std::size_t) == sizeof(::std::uint_least32_t))
@@ -362,7 +300,7 @@ inline void *nt_current_peb() noexcept
 	}
 	else
 	{
-		return RtlGetCurrentPeb();
+		return ntdll_RtlGetCurrentPeb();
 	}
 #endif
 #elif defined(_MSC_VER)
@@ -377,7 +315,7 @@ inline void *nt_current_peb() noexcept
 		reinterpret_cast<char *>(_MoveFromCoprocessor(15, 0, 13, 0, 2)) + 0x30);
 #endif
 #else
-	return RtlGetCurrentPeb();
+	return ntdll_RtlGetCurrentPeb();
 #endif
 }
 
@@ -495,7 +433,7 @@ __wine_unix_host_fd_status_t nt_openat(__wine_host_fd_t host_dirfd, char const *
 
 	io_status_block iosb{};
 	void *handle{};
-	auto const status{NtCreateFile(&handle, access, &oa, &iosb, nullptr, file_attribute_normal,
+	auto const status{ntdll_NtCreateFile(&handle, access, &oa, &iosb, nullptr, file_attribute_normal,
 								   file_share_read | file_share_write | file_share_delete, disposition, options,
 								   nullptr, 0)};
 	if (status != 0)
@@ -512,15 +450,15 @@ __wine_unix_status_t nt_close(__wine_host_fd_t host_fd) noexcept
 	{
 		return err;
 	}
-	return ntstatus_to_wine_errno(NtClose(handle));
+	return ntstatus_to_wine_errno(ntdll_NtClose(handle));
 }
 
 /*
-readv/writev carry POSIX read_some/write_some semantics: one NtReadFile /
-NtWriteFile per call, like the single unix syscall they emulate. NT has no
+readv/writev carry POSIX read_some/write_some semantics: one ntdll_NtReadFile /
+ntdll_NtWriteFile per call, like the single unix syscall they emulate. NT has no
 general vectored file I/O (NtReadFileScatter/NtWriteFileGather require
 FILE_NO_INTERMEDIATE_BUFFERING handles), so calls with more than one iovec are
-gathered/scattered through one process-heap buffer — the RtlAllocateHeap
+gathered/scattered through one process-heap buffer — the ntdll_RtlAllocateHeap
 staging fast_io uses for its nt/win32 scatter buffer logic.
 */
 
@@ -560,12 +498,12 @@ struct rwv_buffer
 	{
 		if (ptr != nullptr)
 		{
-			RtlFreeHeap(process_heap(), 0, ptr);
+			ntdll_RtlFreeHeap(process_heap(), 0, ptr);
 		}
 	}
 	char *allocate(::std::size_t n) noexcept
 	{
-		ptr = static_cast<char *>(RtlAllocateHeap(process_heap(), 0, n));
+		ptr = static_cast<char *>(ntdll_RtlAllocateHeap(process_heap(), 0, n));
 		return ptr;
 	}
 };
@@ -637,7 +575,7 @@ inline __wine_unix_rwv_status_t rwv_split(__wine_unix_status_t status, ::std::si
 }
 
 /*
-Transfer [buf, buf+len) as a series of NtReadFile/NtWriteFile calls — Length is
+Transfer [buf, buf+len) as a series of ntdll_NtReadFile/ntdll_NtWriteFile calls — Length is
 ULONG so each call covers at most 4GiB; the loop keeps going while chunks come
 back full and stops at the first short or failed one (POSIX read_some/
 write_some). offp is the caller's ByteOffset for the p-variants (nullptr
@@ -665,9 +603,9 @@ __wine_unix_status_t nt_transfer(void *handle, void *buf, ::std::size_t len, int
 			}
 		}
 		io_status_block iosb{};
-		auto const st{write ? NtWriteFile(handle, nullptr, nullptr, nullptr, __builtin_addressof(iosb),
+		auto const st{write ? ntdll_NtWriteFile(handle, nullptr, nullptr, nullptr, __builtin_addressof(iosb),
 										  first, request, offp, nullptr)
-							: NtReadFile(handle, nullptr, nullptr, nullptr, __builtin_addressof(iosb),
+							: ntdll_NtReadFile(handle, nullptr, nullptr, nullptr, __builtin_addressof(iosb),
 										 first, request, offp, nullptr)};
 		if (st != 0)
 		{
@@ -818,6 +756,8 @@ __wine_unix_rw_status_t nt_read(__wine_host_fd_t host_fd, void *buf, ::std::size
 
 } // namespace
 } // namespace winelibc_nt
+
+#if !defined(__WINE_UNIX_NT_INTERNAL__)
 
 extern "C"
 {
@@ -1050,3 +990,5 @@ extern "C"
 
 #endif
 }
+
+#endif // !defined(__WINE_UNIX_NT_INTERNAL__)

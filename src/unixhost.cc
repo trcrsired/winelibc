@@ -9,7 +9,7 @@ See dlls/ntdll/unix/virtual.c in the wine source.
 */
 
 #define WINE_UNIX_LIB 1
-#include <__wine_unix/__wine_unix_abi.h>
+#include "__wine_unix_abi.h"
 #include <__wine_unix/__wine_unix_errno.h>
 #include <__wine_unix/__wine_unix_fcntl.h>
 

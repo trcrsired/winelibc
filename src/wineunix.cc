@@ -18,58 +18,35 @@ shipped instead.
 #define __WINE_UNIX_DLL_BUILD
 
 #include <__wine_unix/__wine_unix.h>
-#include <__wine_unix/__wine_unix_abi.h>
+#include "__wine_unix_abi.h"
+#include "ntdll_imports.h"
 
 #include <cstdint>
 
 namespace
 {
 
-/* ---- minimal NT declarations (ntdll.lib) --------------------------------- */
-
-struct unicode_string
-{
-	uint16_t len;
-	uint16_t maxlen;
-	char16_t *buf;
-
-	constexpr unicode_string(char16_t *s, ::std::uint16_t n) noexcept
-		: len{static_cast<::std::uint16_t>(n * sizeof(char16_t))},
-		  maxlen{static_cast<::std::uint16_t>(len + sizeof(char16_t))}, buf{s}
-	{
-	}
-};
-
-struct ansi_string
-{
-	uint16_t len;
-	uint16_t maxlen;
-	char *buf;
-};
-
-extern "C"
-{
-	__declspec(dllimport) int32_t __stdcall NtQueryVirtualMemory(void *process, void const *addr,
-															   uint32_t info_class, void *buffer, size_t len,
-															   size_t *res_len) noexcept;
-	__declspec(dllimport) int32_t __stdcall LdrGetDllHandle(char16_t const *path, uint32_t *characteristics,
-														  unicode_string *name, void **handle) noexcept;
-	__declspec(dllimport) int32_t __stdcall LdrGetProcedureAddress(void *handle, ansi_string const *name,
-																 uint32_t ordinal, void **proc) noexcept;
-	__declspec(dllimport) int32_t __stdcall NtClose(void *handle) noexcept;
-}
-
-constexpr uint32_t memory_wine_load_unix_lib_by_name{1002};
+inline constexpr uint32_t memory_wine_load_unix_lib_by_name{1002};
 
 __wine_unixlib_entry_t const *funcs;
 __wine_unix_call_dispatcher_t dispatcher;
 
+#if defined(__WINE_UNIX_BUNDLED__)
+/*
+Provided by wineunix_bundled.cc (which #includes this file): an nt-side call
+table + dispatcher used when libwineunix.so does not resolve (real windows).
+*/
+extern __wine_unixlib_entry_t const nt_bundle_call_funcs[];
+__wine_unix_status_t __WINE_UNIX_DEFAULTCALL nt_bundle_dispatch(__wine_unixlib_handle_t fns,
+																unsigned int code, void *args) noexcept;
+#endif
+
 bool resolve() noexcept
 {
 	char16_t ntdll_name[] = u"ntdll.dll";
-	unicode_string us{ntdll_name, 12};
+	unicode_string us{24, 26, ntdll_name};
 	void *ntdll{};
-	if (LdrGetDllHandle(nullptr, nullptr, &us, &ntdll) || ntdll == nullptr)
+	if (ntdll_LdrGetDllHandle(nullptr, nullptr, &us, &ntdll) || ntdll == nullptr)
 	{
 		return false;
 	}
@@ -83,7 +60,7 @@ bool resolve() noexcept
 	ansi_string disp_as{static_cast<uint16_t>(sizeof(disp_name) - 1),
 						static_cast<uint16_t>(sizeof(disp_name)), reinterpret_cast<char*>(disp_name)};
 	void *disp_var{};
-	if (LdrGetProcedureAddress(ntdll, &disp_as, 0, &disp_var) || disp_var == nullptr)
+	if (ntdll_LdrGetProcedureAddress(ntdll, &disp_as, 0, &disp_var) || disp_var == nullptr)
 	{
 		return false;
 	}
@@ -91,10 +68,10 @@ bool resolve() noexcept
 
 	/* load the host unixlib by name (WINEDLLPATH dirs + wine's own lib dir) */
 	char16_t lib_name[] = u"libwineunix";
-	unicode_string lib_us{lib_name, 11};
+	unicode_string lib_us{22, 24, lib_name};
 	uint_least64_t res[2]{};
 	size_t reslen{};
-	if (NtQueryVirtualMemory(reinterpret_cast<void *>(static_cast<uintptr_t>(-1)), &lib_us,
+	if (ntdll_NtQueryVirtualMemory(reinterpret_cast<void *>(static_cast<uintptr_t>(-1)), &lib_us,
 							 memory_wine_load_unix_lib_by_name, res, sizeof(res), &reslen) ||
 		res[1] == 0)
 	{
@@ -110,7 +87,13 @@ __wine_unix_status_t call(unsigned int code, void *args) noexcept
 	static bool const ok{resolve()};
 	if (!ok)
 	{
+#if defined(__WINE_UNIX_BUNDLED__)
+		/* no unixlib — run the in-process nt implementation instead */
+		funcs = nt_bundle_call_funcs;
+		dispatcher = nt_bundle_dispatch;
+#else
 		return __WINE_UNIX_ERRNO_ENOSYS;
+#endif
 	}
 	return dispatcher(reinterpret_cast<__wine_unixlib_handle_t>(funcs), code, args);
 }
@@ -145,10 +128,15 @@ extern "C"
 	{
 		__wine_unix_nt_handle_to_host_fd_params_t p{handle, 0};
 		auto const status{call(__wine_unix_call_nt_handle_to_host_fd, &p)};
-		if (!status)
+		if (!status
+#if defined(__WINE_UNIX_BUNDLED__)
+			/* nt dispatch: host_fd just encodes the handle — nothing to close */
+			&& funcs != nt_bundle_call_funcs
+#endif
+		)
 		{
-			/* conversion consumed the handle — the unix side dup'd it to a fresh fd */
-			NtClose(reinterpret_cast<void *>(static_cast<uintptr_t>(handle)));
+			/* unixcall consumed the handle — the unix side dup'd it to a fresh fd */
+			ntdll_NtClose(reinterpret_cast<void *>(static_cast<uintptr_t>(handle)));
 		}
 		return {status, p.host_fd};
 	}
