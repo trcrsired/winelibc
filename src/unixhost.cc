@@ -14,6 +14,7 @@ See dlls/ntdll/unix/virtual.c in the wine source.
 #include <__wine_unix/__wine_unix_fcntl.h>
 
 #include <cstdint>
+#include <dlfcn.h>
 #include <errno.h>
 #include <fcntl.h>
 #include <limits>
@@ -22,10 +23,69 @@ See dlls/ntdll/unix/virtual.c in the wine source.
 #include <sys/uio.h>
 #include <unistd.h>
 
+/*
+ntdll.so unix exports — wineserver-backed fd <-> HANDLE conversion. Resolved with
+dlsym at first use — no DT_NEEDED and no wine libdir path needed. The handles
+they make live in the PE process's own handle table — unixlibs run inside it.
+*/
+using wine_server_fd_to_handle_t = unsigned int(int, unsigned int, unsigned int, void **) noexcept;
+using wine_server_handle_to_fd_t = unsigned int(void *, unsigned int, int *, unsigned int *) noexcept;
+
+/*
+ntdll.so is already mapped (it dlopen'd us) but RTLD_LOCAL, so RTLD_DEFAULT
+cannot see its exports. dlopen by soname with RTLD_NOLOAD returns the handle of
+the already-loaded copy without pulling a second one.
+*/
+inline void *loaded_ntdll_so() noexcept
+{
+	static void *const p{::dlopen("ntdll.so", RTLD_NOW | RTLD_LOCAL | RTLD_NOLOAD)};
+	return p;
+}
+
+inline wine_server_fd_to_handle_t *resolve_wine_server_fd_to_handle() noexcept
+{
+	static void *const ntdll{loaded_ntdll_so()};
+	static auto *const p{ntdll ? reinterpret_cast<wine_server_fd_to_handle_t *>(
+									 ::dlsym(ntdll, "wine_server_fd_to_handle"))
+							   : nullptr};
+	return p;
+}
+
+inline wine_server_handle_to_fd_t *resolve_wine_server_handle_to_fd() noexcept
+{
+	static void *const ntdll{loaded_ntdll_so()};
+	static auto *const p{ntdll ? reinterpret_cast<wine_server_handle_to_fd_t *>(
+									 ::dlsym(ntdll, "wine_server_handle_to_fd"))
+							   : nullptr};
+	return p;
+}
+
 namespace __wine_unix
 {
 namespace
 {
+
+/* win32 access bits used by the wineserver calls */
+constexpr unsigned int wine_generic_read{0x80000000u};
+constexpr unsigned int wine_generic_write{0x40000000u};
+constexpr unsigned int wine_synchronize{0x00100000u};
+constexpr unsigned int wine_obj_inherit{0x00000002u};
+
+/* handle rights the new handle should hold, mirroring the fd's O_ACCMODE */
+inline unsigned int unix_fd_access(int unix_fd) noexcept
+{
+	int const fl{::fcntl(unix_fd, F_GETFL)};
+	unsigned int access{wine_synchronize};
+	if (fl < 0 || (fl & O_ACCMODE) != O_WRONLY)
+	{
+		access |= wine_generic_read;
+	}
+	if (fl < 0 || (fl & O_ACCMODE) != O_RDONLY)
+	{
+		access |= wine_generic_write;
+	}
+	return access;
+}
 
 inline __wine_unix_status_t host_fd_to_unix_fd(__wine_host_fd_t host_fd, int &unix_fd) noexcept
 {
@@ -231,14 +291,45 @@ static __wine_unix_status_t unix_unix_fd_to_host_fd(void *args) noexcept
 	return __WINE_UNIX_ERRNO_SUCCESS;
 }
 
-static __wine_unix_status_t unix_host_fd_to_nt_handle(void *) noexcept
+static __wine_unix_status_t unix_host_fd_to_nt_handle(void *args) noexcept
 {
-	return __WINE_UNIX_ERRNO_EOPNOTSUPP;
+	auto *params{static_cast<__wine_unix_host_fd_to_nt_handle_params *>(args)};
+	int unix_fd{};
+	if (auto const errcode{host_fd_to_unix_fd(params->host_fd, unix_fd)}; errcode)
+	{
+		return errcode;
+	}
+	auto *const fd_to_handle{resolve_wine_server_fd_to_handle()};
+	if (fd_to_handle == nullptr)
+	{
+		return __WINE_UNIX_ERRNO_ENOSYS;
+	}
+	void *handle{};
+	if (fd_to_handle(unix_fd, unix_fd_access(unix_fd), wine_obj_inherit, &handle))
+	{
+		return __WINE_UNIX_ERRNO_EBADF;
+	}
+	params->handle = static_cast<ptrdiff_t>(reinterpret_cast<uintptr_t>(handle));
+	return __WINE_UNIX_ERRNO_SUCCESS;
 }
 
-static __wine_unix_status_t unix_nt_handle_to_host_fd(void *) noexcept
+static __wine_unix_status_t unix_nt_handle_to_host_fd(void *args) noexcept
 {
-	return __WINE_UNIX_ERRNO_EOPNOTSUPP;
+	auto *params{static_cast<__wine_unix_nt_handle_to_host_fd_params *>(args)};
+	auto *const handle_to_fd{resolve_wine_server_handle_to_fd()};
+	if (handle_to_fd == nullptr)
+	{
+		return __WINE_UNIX_ERRNO_ENOSYS;
+	}
+	int unix_fd{};
+	/* access 0: convert whatever the handle grants; the fd keeps the object's real mode */
+	if (handle_to_fd(reinterpret_cast<void *>(static_cast<uintptr_t>(params->handle)),
+					 0, &unix_fd, nullptr))
+	{
+		return __WINE_UNIX_ERRNO_EBADF;
+	}
+	params->host_fd = unix_fd_to_host_fd(unix_fd);
+	return __WINE_UNIX_ERRNO_SUCCESS;
 }
 
 static __wine_unix_status_t unix_openat(void *args) noexcept
@@ -384,14 +475,45 @@ static __wine_unix_status_t wow64_unix_unix_fd_to_host_fd(void *args) noexcept
 	return __WINE_UNIX_ERRNO_SUCCESS;
 }
 
-static __wine_unix_status_t wow64_unix_host_fd_to_nt_handle(void *) noexcept
+static __wine_unix_status_t wow64_unix_host_fd_to_nt_handle(void *args) noexcept
 {
-	return __WINE_UNIX_ERRNO_EOPNOTSUPP;
+	auto *params{static_cast<__wine_unix_host_fd_to_nt_handle_params32 *>(args)};
+	int unix_fd{};
+	if (auto const errcode{host_fd_to_unix_fd(params->host_fd, unix_fd)}; errcode)
+	{
+		return errcode;
+	}
+	auto *const fd_to_handle{resolve_wine_server_fd_to_handle()};
+	if (fd_to_handle == nullptr)
+	{
+		return __WINE_UNIX_ERRNO_ENOSYS;
+	}
+	void *handle{};
+	if (fd_to_handle(unix_fd, unix_fd_access(unix_fd), wine_obj_inherit, &handle))
+	{
+		return __WINE_UNIX_ERRNO_EBADF;
+	}
+	params->handle = static_cast<int32_t>(reinterpret_cast<uintptr_t>(handle));
+	return __WINE_UNIX_ERRNO_SUCCESS;
 }
 
-static __wine_unix_status_t wow64_unix_nt_handle_to_host_fd(void *) noexcept
+static __wine_unix_status_t wow64_unix_nt_handle_to_host_fd(void *args) noexcept
 {
-	return __WINE_UNIX_ERRNO_EOPNOTSUPP;
+	auto *params{static_cast<__wine_unix_nt_handle_to_host_fd_params32 *>(args)};
+	auto *const handle_to_fd{resolve_wine_server_handle_to_fd()};
+	if (handle_to_fd == nullptr)
+	{
+		return __WINE_UNIX_ERRNO_ENOSYS;
+	}
+	int unix_fd{};
+	if (handle_to_fd(reinterpret_cast<void *>(static_cast<uintptr_t>(
+			 static_cast<::std::uint_least32_t>(params->handle))),
+					 0, &unix_fd, nullptr))
+	{
+		return __WINE_UNIX_ERRNO_EBADF;
+	}
+	params->host_fd = static_cast<__wine_unix_ptr32_t>(unix_fd_to_host_fd(unix_fd));
+	return __WINE_UNIX_ERRNO_SUCCESS;
 }
 
 static __wine_unix_status_t wow64_unix_openat(void *args) noexcept
