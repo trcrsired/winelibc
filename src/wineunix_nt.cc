@@ -17,9 +17,19 @@ windows.
 #include <cstdint>
 #include <cstddef>
 #include <type_traits>
+#if defined(_MSC_VER)
+#include <intrin.h>
+#endif
 
 namespace winelibc_nt
 {
+
+/* TEB lives in x18 on arm64 (fast_io fast_io_nt_current_teb). register-asm
+   variables need external linkage, so this sits outside the anon namespace. */
+#if (defined(__GNUC__) || defined(__clang__)) && (defined(__aarch64__) || defined(__arm64ec__))
+register char *nt_current_teb_reg __asm__("x18");
+#endif
+
 namespace
 {
 
@@ -78,6 +88,7 @@ extern "C"
 	__declspec(dllimport) int32_t __stdcall NtClose(void *handle) noexcept;
 	__declspec(dllimport) void *__stdcall RtlAllocateHeap(void *heap, uint32_t flags, uintptr_t size) noexcept;
 	__declspec(dllimport) int __stdcall RtlFreeHeap(void *heap, uint32_t flags, void *ptr) noexcept;
+	__declspec(dllimport) void *__stdcall RtlGetCurrentPeb() noexcept;
 	__declspec(dllimport) void __stdcall RtlInitUnicodeString(unicode_string *dst,
 															char16_t const *src) noexcept;
 	__declspec(dllimport) int32_t __stdcall LdrGetDllHandle(char16_t const *path, uint32_t *characteristics,
@@ -426,15 +437,67 @@ gathered/scattered through one process-heap buffer — the RtlAllocateHeap
 staging fast_io uses for its nt/win32 scatter buffer logic.
 */
 
+/*
+nt_get_current_peb, ported from fast_io's nt_preliminary_definition.h for every
+arch it supports. RtlGetCurrentPeb is the fallback where no direct read exists.
+*/
+inline void *nt_current_peb() noexcept
+{
+#if defined(__GNUC__) || defined(__clang__)
+#if defined(__aarch64__) || defined(__arm64ec__)
+	/* TEB is x18 on arm64; ProcessEnvironmentBlock at 0x60 */
+	return *reinterpret_cast<void **>(nt_current_teb_reg + 0x60);
+#elif defined(__i386__) || defined(__x86_64__)
+	if constexpr (sizeof(::std::size_t) == sizeof(::std::uint_least64_t))
+	{
+		void *peb;
+		__asm__("{movq\t%%gs:0x60, %0|mov\t%0, %%gs:[0x60]}" : "=r"(peb));
+		return peb;
+	}
+	else if constexpr (sizeof(::std::size_t) == sizeof(::std::uint_least32_t))
+	{
+		void *peb;
+		__asm__("{movl\t%%fs:0x30, %0|mov\t%0, %%fs:[0x30]}" : "=r"(peb));
+		return peb;
+	}
+	else
+	{
+		return RtlGetCurrentPeb();
+	}
+#else
+	if constexpr (sizeof(::std::size_t) == sizeof(::std::uint_least32_t))
+	{
+		char *teb;
+		__asm__("MRC p15, 0, %0, c13, c0, 2" : "=r"(teb));
+		return *reinterpret_cast<void **>(teb + 0x30);
+	}
+	else
+	{
+		return RtlGetCurrentPeb();
+	}
+#endif
+#elif defined(_MSC_VER)
+#if defined(_M_ARM64) || defined(_M_ARM64EC)
+	return *reinterpret_cast<void **>(reinterpret_cast<char *>(__getReg(18)) + 0x60);
+#elif defined(_M_AMD64)
+	return reinterpret_cast<void *>(__readgsqword(0x60));
+#elif defined(_M_IX86)
+	return reinterpret_cast<void *>(__readfsdword(0x30));
+#else
+	return *reinterpret_cast<void **>(
+		reinterpret_cast<char *>(_MoveFromCoprocessor(15, 0, 13, 0, 2)) + 0x30);
+#endif
+#else
+	return RtlGetCurrentPeb();
+#endif
+}
+
+/* fast_io rtl_get_process_heap: peb::ProcessHeap — 0x30 on 64-bit, 0x18 on 32-bit */
 inline void *process_heap() noexcept
 {
-	/*
-	fast_io rtl_get_process_heap: gs:[0x60] is the PEB pointer
-	(TEB::ProcessEnvironmentBlock), peb::ProcessHeap sits at 0x30.
-	*/
-	void *peb;
-	__asm__("{movq\t%%gs:0x60, %0|mov\t%0, %%gs:[0x60]}" : "=r"(peb));
-	return *reinterpret_cast<void **>(static_cast<char *>(peb) + 0x30);
+	auto *peb{static_cast<char *>(nt_current_peb())};
+	return *reinterpret_cast<void **>(
+		peb + (sizeof(::std::size_t) == sizeof(::std::uint_least64_t) ? 0x30 : 0x18));
 }
 
 struct rwv_buffer
@@ -524,39 +587,59 @@ inline __wine_unix_rwv_status_t rwv_split(__wine_unix_status_t status, ::std::si
 }
 
 /*
-One transfer = one NtReadFile/NtWriteFile of up to len bytes at buf. offp is
-the caller's ByteOffset for the p-variants (nullptr otherwise); nonnegative
-offsets get the pre-call overflow check, negative ones (-1/-2 special
-positions) pass through unmodified, matching fast_io's thunk.
+Transfer [buf, buf+len) as a series of NtReadFile/NtWriteFile calls — Length is
+ULONG so each call covers at most 4GiB; the loop keeps going while chunks come
+back full and stops at the first short or failed one (POSIX read_some/
+write_some). offp is the caller's ByteOffset for the p-variants (nullptr
+otherwise) and advances per chunk; nonnegative offsets get the pre-call
+overflow check, negative ones (-1/-2 special positions) pass through
+unmodified, matching fast_io's thunk.
 */
 __wine_unix_status_t nt_transfer(void *handle, void *buf, ::std::size_t len, int64_t *offp,
 								 bool write, ::std::size_t &done) noexcept
 {
 	done = 0;
-	uint32_t const request{len < 0x100000000uz ? static_cast<uint32_t>(len) : 0xFFFFFFFFu};
-	if (offp != nullptr && 0 <= *offp)
+	auto *first{static_cast<char *>(buf)};
+	auto *const last{first + len};
+	while (first != last)
 	{
-		int64_t nxt;
-		if (__builtin_add_overflow(*offp, static_cast<int64_t>(request), __builtin_addressof(nxt)))
+		uint32_t const request{static_cast<::std::size_t>(last - first) < 0xFFFFFFFFuz
+								   ? static_cast<uint32_t>(last - first)
+								   : 0xFFFFFFFFu};
+		if (offp != nullptr && 0 <= *offp)
 		{
-			return __WINE_UNIX_ERRNO_EOVERFLOW;
+			int64_t nxt;
+			if (__builtin_add_overflow(*offp, static_cast<int64_t>(request), __builtin_addressof(nxt)))
+			{
+				return __WINE_UNIX_ERRNO_EOVERFLOW;
+			}
+		}
+		io_status_block iosb{};
+		auto const st{write ? NtWriteFile(handle, nullptr, nullptr, nullptr, __builtin_addressof(iosb),
+										  first, request, offp, nullptr)
+							: NtReadFile(handle, nullptr, nullptr, nullptr, __builtin_addressof(iosb),
+										 first, request, offp, nullptr)};
+		if (st != 0)
+		{
+			auto const ust{static_cast<uint32_t>(st)};
+			if (!write && (ust == status_end_of_file || ust == status_pipe_broken))
+			{
+				return __WINE_UNIX_ERRNO_SUCCESS;
+			}
+			return ntstatus_to_wine_errno(st);
+		}
+		auto const transferred{static_cast<::std::size_t>(iosb.Information)};
+		done += transferred;
+		if (offp != nullptr && 0 <= *offp)
+		{
+			*offp += static_cast<int64_t>(transferred);
+		}
+		first += transferred;
+		if (transferred < request)
+		{
+			break;
 		}
 	}
-	io_status_block iosb{};
-	auto const st{write ? NtWriteFile(handle, nullptr, nullptr, nullptr, __builtin_addressof(iosb),
-									  buf, request, offp, nullptr)
-						: NtReadFile(handle, nullptr, nullptr, nullptr, __builtin_addressof(iosb),
-									 buf, request, offp, nullptr)};
-	if (st != 0)
-	{
-		auto const ust{static_cast<uint32_t>(st)};
-		if (!write && (ust == status_end_of_file || ust == status_pipe_broken))
-		{
-			return __WINE_UNIX_ERRNO_SUCCESS;
-		}
-		return ntstatus_to_wine_errno(st);
-	}
-	done = static_cast<::std::size_t>(iosb.Information);
 	return __WINE_UNIX_ERRNO_SUCCESS;
 }
 
