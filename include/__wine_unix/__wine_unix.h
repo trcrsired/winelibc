@@ -93,7 +93,7 @@ typedef ptrdiff_t __wine_off_t;
 	typedef struct
 	{
 		__wine_unix_status_t status;
-		int unix_fd;
+		int_least32_t unix_fd;
 	} __wine_unix_unix_fd_status_t;
 
 	typedef struct
@@ -133,6 +133,14 @@ typedef ptrdiff_t __wine_off_t;
 		size_t total;
 	} __wine_unix_rw_status_t;
 
+	/* is_unix: 1 when calls run through the unix backend (wine +
+	   libwineunix.so on real host libc), 0 on the nt backend. */
+	typedef struct
+	{
+		__wine_unix_status_t status;
+		uint_least32_t is_unix;
+	} __wine_unix_is_unix_status_t;
+
 	/* success-side value of the plain (non-vectored) read/write calls. */
 	typedef struct
 	{
@@ -140,7 +148,7 @@ typedef ptrdiff_t __wine_off_t;
 	} __wine_unix_rw_result_t;
 
 	__WINE_UNIX_API __wine_unix_unix_fd_status_t __wine_unix_host_fd_to_unix_fd_returns_status(__wine_host_fd_t host_fd) __WINE_UNIX_NOEXCEPT;
-	__WINE_UNIX_API __wine_unix_host_fd_status_t __wine_unix_unix_fd_to_host_fd_returns_status(int unix_fd) __WINE_UNIX_NOEXCEPT;
+	__WINE_UNIX_API __wine_unix_host_fd_status_t __wine_unix_unix_fd_to_host_fd_returns_status(int_least32_t unix_fd) __WINE_UNIX_NOEXCEPT;
 	/*
 	host_fd <-> HANDLE conversions TRANSFER ownership: on success the source is
 	consumed (caller must not use or close it) and the result is owned by the
@@ -199,7 +207,7 @@ typedef ptrdiff_t __wine_off_t;
 	Error} handle from PEB->ProcessParameters.
 	*/
 	__WINE_UNIX_API __WINE_UNIX_CONST __wine_unix_host_fd_status_t
-	__wine_unix_get_std_host_fd_returns_status(int which) __WINE_UNIX_NOEXCEPT;
+	__wine_unix_get_std_host_fd_returns_status(int_least32_t which) __WINE_UNIX_NOEXCEPT;
 
 	/*
 	the impl-defined at_fdcwd token to pass as host_dirfd: unixcall impl
@@ -208,6 +216,15 @@ typedef ptrdiff_t __wine_off_t;
 	cwd. Infallible; returns 0 only if the dispatcher itself is broken.
 	*/
 	__WINE_UNIX_API __WINE_UNIX_CONST __wine_host_fd_t __wine_unix_at_fdcwd(void) __WINE_UNIX_NOEXCEPT;
+
+	/*
+	emulated or real unix: is_unix is 1 when the unix backend answered
+	(libwineunix.so on real host libc — i.e. running under wine), 0 on the
+	nt backend (real windows, or wine without the unixlib). status reports
+	only dispatch-level failure — a unixcall-only dll on real windows has no
+	dispatcher at all and reports ENOSYS rather than an answer.
+	*/
+	__WINE_UNIX_API __WINE_UNIX_CONST __wine_unix_is_unix_status_t __wine_unix_is_unix_returns_status(void) __WINE_UNIX_NOEXCEPT;
 
 #if defined(__cplusplus)
 }
@@ -241,8 +258,8 @@ enum __wine_unix_errc : uint_least32_t
 #endif
 
 #if defined(__HERBCEPTIONS__)
-	__WINE_UNIX_API int __wine_unix_host_fd_to_unix_fd(__wine_host_fd_t host_fd) return_failure { __WINE_UNIX_ERRC_T };
-	__WINE_UNIX_API __wine_host_fd_t __wine_unix_unix_fd_to_host_fd(int unix_fd) return_failure { __WINE_UNIX_ERRC_T };
+	__WINE_UNIX_API int_least32_t __wine_unix_host_fd_to_unix_fd(__wine_host_fd_t host_fd) return_failure { __WINE_UNIX_ERRC_T };
+	__WINE_UNIX_API __wine_host_fd_t __wine_unix_unix_fd_to_host_fd(int_least32_t unix_fd) return_failure { __WINE_UNIX_ERRC_T };
 	__WINE_UNIX_API ptrdiff_t __wine_unix_host_fd_to_nt_handle(__wine_host_fd_t host_fd) return_failure { __WINE_UNIX_ERRC_T };
 	__WINE_UNIX_API __wine_host_fd_t __wine_unix_nt_handle_to_host_fd(ptrdiff_t handle) return_failure { __WINE_UNIX_ERRC_T };
 	__WINE_UNIX_API __wine_host_fd_t __wine_unix_nt_handle_to_host_fd_ref(ptrdiff_t handle) return_failure { __WINE_UNIX_ERRC_T };
@@ -273,7 +290,9 @@ enum __wine_unix_errc : uint_least32_t
 	__WINE_UNIX_API __wine_unix_rw_result_t __wine_unix_read(__wine_host_fd_t host_fd, void *buf,
 															 size_t len) return_failure { __WINE_UNIX_ERRC_T };
 	__WINE_UNIX_API __WINE_UNIX_CONST __wine_host_fd_t
-	__wine_unix_get_std_host_fd(int which) return_failure { __WINE_UNIX_ERRC_T };
+	__wine_unix_get_std_host_fd(int_least32_t which) return_failure { __WINE_UNIX_ERRC_T };
+	/* nonzero = unix backend (wine + libwineunix.so); 0 = nt backend */
+	__WINE_UNIX_API __WINE_UNIX_CONST uint_least32_t __wine_unix_is_unix(void) return_failure { __WINE_UNIX_ERRC_T };
 #endif
 
 #ifdef __cplusplus

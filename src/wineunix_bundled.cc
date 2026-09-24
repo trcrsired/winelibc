@@ -156,6 +156,12 @@ __wine_unix_status_t nt_op_open(void *args) noexcept
 	return r.status;
 }
 
+__wine_unix_status_t nt_op_is_unix(void *args) noexcept
+{
+	static_cast<__wine_unix_is_unix_params_t *>(args)->is_unix = 0;
+	return __WINE_UNIX_ERRNO_SUCCESS;
+}
+
 __wine_unixlib_entry_t const nt_bundle_call_funcs[__wine_unix_call_funcs_count]{
 	nt_op_host_fd_to_unix_fd,
 	nt_op_unix_fd_to_host_fd,
@@ -172,6 +178,7 @@ __wine_unixlib_entry_t const nt_bundle_call_funcs[__wine_unix_call_funcs_count]{
 	nt_op_get_std_host_fd,
 	nt_op_at_fdcwd,
 	nt_op_open,
+	nt_op_is_unix,
 };
 
 __wine_unix_status_t __WINE_UNIX_DEFAULTCALL nt_bundle_dispatch(__wine_unixlib_handle_t fns,

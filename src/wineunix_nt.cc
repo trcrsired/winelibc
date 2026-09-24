@@ -246,7 +246,7 @@ __wine_unix_unix_fd_status_t nt_host_fd_to_unix_fd(__wine_host_fd_t host_fd) noe
 	return {__WINE_UNIX_ERRNO_SUCCESS, static_cast<int>(v)};
 }
 
-__wine_unix_host_fd_status_t nt_unix_fd_to_host_fd(int unix_fd) noexcept
+__wine_unix_host_fd_status_t nt_unix_fd_to_host_fd(int_least32_t unix_fd) noexcept
 {
 	return {__WINE_UNIX_ERRNO_SUCCESS,
 			unix_fd < 0 ? 0 : static_cast<__wine_host_fd_t>(unix_fd)};
@@ -458,6 +458,12 @@ __wine_unix_host_fd_status_t nt_open(char const *filename, ::std::size_t filenam
 	return nt_openat(0, filename, filenamelen, flags, mode);
 }
 
+/* the nt backend always answers "not unix" */
+__wine_unix_is_unix_status_t nt_is_unix() noexcept
+{
+	return {__WINE_UNIX_ERRNO_SUCCESS, 0};
+}
+
 __wine_unix_status_t nt_close(__wine_host_fd_t host_fd) noexcept
 {
 	void *handle{};
@@ -483,7 +489,7 @@ ProcessParameters at peb+0x20 (64-bit) / +0x14 (32-bit); inside
 rtl_user_process_parameters the std handles sit at +0x20/+0x28/+0x30 (64-bit)
 or +0x18/+0x1c/+0x20 (32-bit).
 */
-inline void *nt_get_std_handle(int which) noexcept
+inline void *nt_get_std_handle(int_least32_t which) noexcept
 {
 	if (which < 0 || 2 < which)
 	{
@@ -498,7 +504,7 @@ inline void *nt_get_std_handle(int which) noexcept
 									  static_cast<::std::size_t>(which) * sizeof(void *));
 }
 
-__wine_unix_host_fd_status_t nt_get_std_host_fd(int which) noexcept
+__wine_unix_host_fd_status_t nt_get_std_host_fd(int_least32_t which) noexcept
 {
 	return {__WINE_UNIX_ERRNO_SUCCESS, handle_to_host_fd(nt_get_std_handle(which))};
 }
@@ -783,7 +789,7 @@ extern "C"
 	}
 
 	__WINE_UNIX_API __wine_unix_host_fd_status_t
-	__wine_unix_unix_fd_to_host_fd_returns_status(int unix_fd) noexcept
+	__wine_unix_unix_fd_to_host_fd_returns_status(int_least32_t unix_fd) noexcept
 	{
 		return ::winelibc_nt::nt_unix_fd_to_host_fd(unix_fd);
 	}
@@ -870,7 +876,7 @@ extern "C"
 	}
 
 	__WINE_UNIX_API __WINE_UNIX_CONST __wine_unix_host_fd_status_t
-	__wine_unix_get_std_host_fd_returns_status(int which) noexcept
+	__wine_unix_get_std_host_fd_returns_status(int_least32_t which) noexcept
 	{
 		return ::winelibc_nt::nt_get_std_host_fd(which);
 	}
@@ -880,9 +886,14 @@ extern "C"
 		return ::winelibc_nt::nt_at_fdcwd().host_fd;
 	}
 
+	__WINE_UNIX_API __WINE_UNIX_CONST __wine_unix_is_unix_status_t __wine_unix_is_unix_returns_status(void) noexcept
+	{
+		return ::winelibc_nt::nt_is_unix();
+	}
+
 #if defined(__HERBCEPTIONS__)
 
-	__WINE_UNIX_API int __wine_unix_host_fd_to_unix_fd(__wine_host_fd_t host_fd) return_failure{__wine_unix_errc}
+	__WINE_UNIX_API int_least32_t __wine_unix_host_fd_to_unix_fd(__wine_host_fd_t host_fd) return_failure{__wine_unix_errc}
 	{
 		auto const r{__wine_unix_host_fd_to_unix_fd_returns_status(host_fd)};
 		if (r.status != __WINE_UNIX_ERRNO_SUCCESS)
@@ -892,7 +903,7 @@ extern "C"
 		return r.unix_fd;
 	}
 
-	__WINE_UNIX_API __wine_host_fd_t __wine_unix_unix_fd_to_host_fd(int unix_fd) return_failure{__wine_unix_errc}
+	__WINE_UNIX_API __wine_host_fd_t __wine_unix_unix_fd_to_host_fd(int_least32_t unix_fd) return_failure{__wine_unix_errc}
 	{
 		auto const r{__wine_unix_unix_fd_to_host_fd_returns_status(unix_fd)};
 		if (r.status != __WINE_UNIX_ERRNO_SUCCESS)
@@ -1037,7 +1048,7 @@ extern "C"
 	}
 
 	__WINE_UNIX_API __WINE_UNIX_CONST __wine_host_fd_t
-	__wine_unix_get_std_host_fd(int which) return_failure{__wine_unix_errc}
+	__wine_unix_get_std_host_fd(int_least32_t which) return_failure{__wine_unix_errc}
 	{
 		auto const r{__wine_unix_get_std_host_fd_returns_status(which)};
 		if (r.status != __WINE_UNIX_ERRNO_SUCCESS)
@@ -1045,6 +1056,16 @@ extern "C"
 			return_failure static_cast<__wine_unix_errc>(r.status);
 		}
 		return r.host_fd;
+	}
+
+	__WINE_UNIX_API __WINE_UNIX_CONST uint_least32_t __wine_unix_is_unix(void) return_failure{__wine_unix_errc}
+	{
+		auto const r{__wine_unix_is_unix_returns_status()};
+		if (r.status != __WINE_UNIX_ERRNO_SUCCESS)
+		{
+			return_failure static_cast<__wine_unix_errc>(r.status);
+		}
+		return r.is_unix;
 	}
 
 #endif

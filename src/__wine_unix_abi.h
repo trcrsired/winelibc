@@ -46,7 +46,7 @@ extern "C"
 #endif
 
 	/* 32-bit pointer value, used to carry wow64 pointers across the boundary. */
-	typedef uint32_t __wine_unix_ptr32_t;
+	typedef uint_least32_t __wine_unix_ptr32_t;
 
 	/* opaque handle to the unixlib call table. always 64-bit so it can cross wow64. */
 	typedef uint_least64_t __wine_unixlib_handle_t;
@@ -75,18 +75,19 @@ extern "C"
 		__wine_unix_call_get_std_host_fd,
 		__wine_unix_call_at_fdcwd,
 		__wine_unix_call_open,
+		__wine_unix_call_is_unix,
 		__wine_unix_call_funcs_count,
 	};
 
 	typedef struct
 	{
 		__wine_host_fd_t host_fd;
-		int unix_fd; /* output */
+		int_least32_t unix_fd; /* output */
 	} __wine_unix_host_fd_to_unix_fd_params;
 
 	typedef struct
 	{
-		int unix_fd;
+		int_least32_t unix_fd;
 		__wine_host_fd_t host_fd; /* output */
 	} __wine_unix_unix_fd_to_host_fd_params;
 
@@ -138,7 +139,7 @@ extern "C"
 
 	typedef struct
 	{
-		int which;                /* 0 stdin, 1 stdout, 2 stderr */
+		int_least32_t which;      /* 0 stdin, 1 stdout, 2 stderr */
 		__wine_host_fd_t host_fd; /* output */
 	} __wine_unix_get_std_host_fd_params;
 
@@ -169,6 +170,11 @@ extern "C"
 		size_t total; /* output: bytes transferred */
 	} __wine_unix_readwrite_params;
 
+	typedef struct
+	{
+		uint_least32_t is_unix; /* output: 1 on the unix backend, 0 on nt */
+	} __wine_unix_is_unix_params;
+
 	/*
 	wow64 (32-bit PE on a 64-bit host) variants. Explicitly packed so the layout
 	is identical under MSVC x86, mingw x86 and the 64-bit unixlib reader.
@@ -177,24 +183,24 @@ extern "C"
 	typedef struct
 	{
 		__wine_unix_ptr32_t host_fd;
-		int32_t unix_fd;
+		int_least32_t unix_fd;
 	} __wine_unix_host_fd_to_unix_fd_params32;
 
 	typedef struct
 	{
-		int32_t unix_fd;
+		int_least32_t unix_fd;
 		__wine_unix_ptr32_t host_fd;
 	} __wine_unix_unix_fd_to_host_fd_params32;
 
 	typedef struct
 	{
 		__wine_unix_ptr32_t host_fd;
-		int32_t handle;
+		int_least32_t handle;
 	} __wine_unix_host_fd_to_nt_handle_params32;
 
 	typedef struct
 	{
-		int32_t handle;
+		int_least32_t handle;
 		__wine_unix_ptr32_t host_fd;
 	} __wine_unix_nt_handle_to_host_fd_params32;
 
@@ -217,24 +223,24 @@ extern "C"
 	{
 		__wine_unix_ptr32_t host_fd;
 		__wine_unix_ptr32_t iovs;
-		uint32_t iovsize;
-		uint32_t baseindex;
-		uint32_t index;
+		uint_least32_t iovsize;
+		uint_least32_t baseindex;
+		uint_least32_t index;
 	} __wine_unix_readwritev_params32;
 
 	typedef struct
 	{
 		__wine_unix_ptr32_t host_fd;
 		__wine_unix_ptr32_t iovs;
-		uint32_t iovsize;
+		uint_least32_t iovsize;
 		__wine_off_t offset;
-		uint32_t baseindex;
-		uint32_t index;
+		uint_least32_t baseindex;
+		uint_least32_t index;
 	} __wine_unix_preadwritev_params32;
 
 	typedef struct
 	{
-		int32_t which;
+		int_least32_t which;
 		__wine_unix_ptr32_t host_fd;
 	} __wine_unix_get_std_host_fd_params32;
 
@@ -256,9 +262,14 @@ extern "C"
 	{
 		__wine_unix_ptr32_t host_fd;
 		__wine_unix_ptr32_t buf;
-		uint32_t len;
-		uint32_t total;
+		uint_least32_t len;
+		uint_least32_t total;
 	} __wine_unix_readwrite_params32;
+
+	typedef struct
+	{
+		uint_least32_t is_unix;
+	} __wine_unix_is_unix_params32;
 #pragma pack(pop)
 
 	/* arch-selected params types: what a given side actually builds/passes. */
@@ -275,6 +286,7 @@ extern "C"
 	typedef __wine_unix_at_fdcwd_params32 __wine_unix_at_fdcwd_params_t;
 	typedef __wine_unix_open_params32 __wine_unix_open_params_t;
 	typedef __wine_unix_readwrite_params32 __wine_unix_readwrite_params_t;
+	typedef __wine_unix_is_unix_params32 __wine_unix_is_unix_params_t;
 #else
 typedef __wine_unix_host_fd_to_unix_fd_params __wine_unix_host_fd_to_unix_fd_params_t;
 typedef __wine_unix_unix_fd_to_host_fd_params __wine_unix_unix_fd_to_host_fd_params_t;
@@ -288,6 +300,7 @@ typedef __wine_unix_get_std_host_fd_params __wine_unix_get_std_host_fd_params_t;
 typedef __wine_unix_at_fdcwd_params __wine_unix_at_fdcwd_params_t;
 typedef __wine_unix_open_params __wine_unix_open_params_t;
 typedef __wine_unix_readwrite_params __wine_unix_readwrite_params_t;
+typedef __wine_unix_is_unix_params __wine_unix_is_unix_params_t;
 #endif
 
 #ifdef WINE_UNIX_LIB
@@ -304,7 +317,7 @@ dispatcher address). The "unixlib handle" is the loaded unixlib's
 __wine_unix_call_funcs table pointer.
 */
 typedef __wine_unix_status_t(__WINE_UNIX_DEFAULTCALL *__wine_unix_call_dispatcher_t)(__wine_unixlib_handle_t,
-																					 unsigned int, void *);
+																					 uint_least32_t, void *);
 #endif
 
 #ifdef __cplusplus

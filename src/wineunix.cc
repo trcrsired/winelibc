@@ -133,7 +133,7 @@ extern "C"
 	}
 
 	__WINE_UNIX_API __wine_unix_host_fd_status_t
-	__wine_unix_unix_fd_to_host_fd_returns_status(int unix_fd) noexcept
+	__wine_unix_unix_fd_to_host_fd_returns_status(int_least32_t unix_fd) noexcept
 	{
 		__wine_unix_unix_fd_to_host_fd_params_t p{unix_fd, 0};
 		return {call(__wine_unix_call_unix_fd_to_host_fd, &p), p.host_fd};
@@ -259,7 +259,7 @@ extern "C"
 	}
 
 	__WINE_UNIX_API __WINE_UNIX_CONST __wine_unix_host_fd_status_t
-	__wine_unix_get_std_host_fd_returns_status(int which) noexcept
+	__wine_unix_get_std_host_fd_returns_status(int_least32_t which) noexcept
 	{
 		__wine_unix_get_std_host_fd_params_t p{which, 0};
 		return {call(__wine_unix_call_get_std_host_fd, &p), p.host_fd};
@@ -275,9 +275,15 @@ extern "C"
 		return p.host_fd;
 	}
 
+	__WINE_UNIX_API __WINE_UNIX_CONST __wine_unix_is_unix_status_t __wine_unix_is_unix_returns_status(void) noexcept
+	{
+		__wine_unix_is_unix_params_t p{0};
+		return {call(__wine_unix_call_is_unix, &p), p.is_unix};
+	}
+
 #if defined(__HERBCEPTIONS__)
 
-	__WINE_UNIX_API int __wine_unix_host_fd_to_unix_fd(__wine_host_fd_t host_fd) return_failure{__wine_unix_errc}
+	__WINE_UNIX_API int_least32_t __wine_unix_host_fd_to_unix_fd(__wine_host_fd_t host_fd) return_failure{__wine_unix_errc}
 	{
 		auto const r{__wine_unix_host_fd_to_unix_fd_returns_status(host_fd)};
 		if (r.status != __WINE_UNIX_ERRNO_SUCCESS)
@@ -287,7 +293,7 @@ extern "C"
 		return r.unix_fd;
 	}
 
-	__WINE_UNIX_API __wine_host_fd_t __wine_unix_unix_fd_to_host_fd(int unix_fd) return_failure{__wine_unix_errc}
+	__WINE_UNIX_API __wine_host_fd_t __wine_unix_unix_fd_to_host_fd(int_least32_t unix_fd) return_failure{__wine_unix_errc}
 	{
 		auto const r{__wine_unix_unix_fd_to_host_fd_returns_status(unix_fd)};
 		if (r.status != __WINE_UNIX_ERRNO_SUCCESS)
@@ -432,7 +438,7 @@ extern "C"
 	}
 
 	__WINE_UNIX_API __WINE_UNIX_CONST __wine_host_fd_t
-	__wine_unix_get_std_host_fd(int which) return_failure{__wine_unix_errc}
+	__wine_unix_get_std_host_fd(int_least32_t which) return_failure{__wine_unix_errc}
 	{
 		auto const r{__wine_unix_get_std_host_fd_returns_status(which)};
 		if (r.status != __WINE_UNIX_ERRNO_SUCCESS)
@@ -440,6 +446,16 @@ extern "C"
 			return_failure static_cast<__wine_unix_errc>(r.status);
 		}
 		return r.host_fd;
+	}
+
+	__WINE_UNIX_API __WINE_UNIX_CONST uint_least32_t __wine_unix_is_unix(void) return_failure{__wine_unix_errc}
+	{
+		auto const r{__wine_unix_is_unix_returns_status()};
+		if (r.status != __WINE_UNIX_ERRNO_SUCCESS)
+		{
+			return_failure static_cast<__wine_unix_errc>(r.status);
+		}
+		return r.is_unix;
 	}
 
 #endif
