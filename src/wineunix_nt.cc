@@ -458,12 +458,6 @@ __wine_unix_host_fd_status_t nt_open(char const *filename, ::std::size_t filenam
 	return nt_openat(0, filename, filenamelen, flags, mode);
 }
 
-/* the nt backend always answers "not unix" */
-__wine_unix_is_unix_status_t nt_is_unix() noexcept
-{
-	return {__WINE_UNIX_ERRNO_SUCCESS, 0};
-}
-
 __wine_unix_status_t nt_close(__wine_host_fd_t host_fd) noexcept
 {
 	void *handle{};
@@ -886,9 +880,9 @@ extern "C"
 		return ::winelibc_nt::nt_at_fdcwd().host_fd;
 	}
 
-	__WINE_UNIX_API __WINE_UNIX_CONST __wine_unix_is_unix_status_t __wine_unix_is_unix_returns_status(void) noexcept
+	__WINE_UNIX_API __WINE_UNIX_CONST uint_least8_t __wine_unix_is_unix(void) noexcept
 	{
-		return ::winelibc_nt::nt_is_unix();
+		return 0;
 	}
 
 #if defined(__HERBCEPTIONS__)
@@ -1056,16 +1050,6 @@ extern "C"
 			return_failure static_cast<__wine_unix_errc>(r.status);
 		}
 		return r.host_fd;
-	}
-
-	__WINE_UNIX_API __WINE_UNIX_CONST uint_least32_t __wine_unix_is_unix(void) return_failure{__wine_unix_errc}
-	{
-		auto const r{__wine_unix_is_unix_returns_status()};
-		if (r.status != __WINE_UNIX_ERRNO_SUCCESS)
-		{
-			return_failure static_cast<__wine_unix_errc>(r.status);
-		}
-		return r.is_unix;
 	}
 
 #endif

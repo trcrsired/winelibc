@@ -106,6 +106,19 @@ void init_dispatch() noexcept
 #endif
 }
 
+/*
+whether the unix backend is live — decided by which table funcs points at:
+the unixlib's table (resolved under wine) or the bundled nt table.
+*/
+inline bool unix_backend_live() noexcept
+{
+	return funcs != nullptr
+#if defined(__WINE_UNIX_BUNDLED__)
+		   && funcs != nt_bundle_call_funcs
+#endif
+		;
+}
+
 } // namespace
 
 /*
@@ -265,20 +278,25 @@ extern "C"
 		return {call(__wine_unix_call_get_std_host_fd, &p), p.host_fd};
 	}
 
-	__WINE_UNIX_API __WINE_UNIX_CONST __wine_host_fd_t __wine_unix_at_fdcwd(void) noexcept
+	__WINE_UNIX_API __WINE_UNIX_CONST uint_least8_t __wine_unix_is_unix(void) noexcept
 	{
-		__wine_unix_at_fdcwd_params_t p{0};
-		if (call(__wine_unix_call_at_fdcwd, &p) != __WINE_UNIX_ERRNO_SUCCESS)
-		{
-			return 0;
-		}
-		return p.host_fd;
+		return unix_backend_live();
 	}
 
-	__WINE_UNIX_API __WINE_UNIX_CONST __wine_unix_is_unix_status_t __wine_unix_is_unix_returns_status(void) noexcept
+	__WINE_UNIX_API __WINE_UNIX_CONST __wine_host_fd_t __wine_unix_at_fdcwd(void) noexcept
 	{
-		__wine_unix_is_unix_params_t p{0};
-		return {call(__wine_unix_call_is_unix, &p), p.is_unix};
+		if (unix_backend_live())
+		{
+			/* unixcall impl encodes host_fd = unix_fd + 1; AT_FDCWD is -100 */
+			return static_cast<__wine_host_fd_t>(-100) + 1;
+		}
+#if defined(__WINE_UNIX_BUNDLED__)
+		if (funcs == nt_bundle_call_funcs)
+		{
+			return static_cast<__wine_host_fd_t>(-3); /* fast_io's nt_at_fdcwd sentinel */
+		}
+#endif
+		return 0; /* dispatcher never resolved */
 	}
 
 #if defined(__HERBCEPTIONS__)
@@ -446,16 +464,6 @@ extern "C"
 			return_failure static_cast<__wine_unix_errc>(r.status);
 		}
 		return r.host_fd;
-	}
-
-	__WINE_UNIX_API __WINE_UNIX_CONST uint_least32_t __wine_unix_is_unix(void) return_failure{__wine_unix_errc}
-	{
-		auto const r{__wine_unix_is_unix_returns_status()};
-		if (r.status != __WINE_UNIX_ERRNO_SUCCESS)
-		{
-			return_failure static_cast<__wine_unix_errc>(r.status);
-		}
-		return r.is_unix;
 	}
 
 #endif

@@ -557,17 +557,6 @@ static __wine_unix_status_t unix_open(void *args) noexcept
 							params->mode, params->host_fd);
 }
 
-/*
-this handler only ever runs when the unix backend answered the unixcall —
-the params layouts are identical for both ABIs, so the same function serves
-__wine_unix_call_funcs and __wine_unix_call_wow64_funcs.
-*/
-static __wine_unix_status_t unix_is_unix(void *args) noexcept
-{
-	static_cast<__wine_unix_is_unix_params *>(args)->is_unix = 1;
-	return __WINE_UNIX_ERRNO_SUCCESS;
-}
-
 static __wine_unix_status_t unix_close(void *args) noexcept
 {
 	auto *params{static_cast<__wine_unix_close_params_t *>(args)};
@@ -934,7 +923,6 @@ extern "C"
 		::__wine_unix::unix_get_std_host_fd,
 		::__wine_unix::unix_at_fdcwd,
 		::__wine_unix::unix_open,
-		::__wine_unix::unix_is_unix,
 	};
 
 #if INTPTR_MAX >= INT64_MAX
@@ -954,7 +942,6 @@ extern "C"
 		::__wine_unix::wow64_unix_get_std_host_fd,
 		::__wine_unix::wow64_unix_at_fdcwd,
 		::__wine_unix::wow64_unix_open,
-		::__wine_unix::unix_is_unix, /* params layout is identical for both ABIs */
 	};
 #endif
 
