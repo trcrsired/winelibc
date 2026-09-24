@@ -122,12 +122,38 @@ if(WINELIBC_WINEUNIX_DLL)
 endif()
 
 if(WINELIBC_IMPORT_LIB)
+	# llvm-dlltool defaults to x64 — pick the PE machine from the host arch
+	# (the unixlib's arch always matches its PE side under wine).
+	# WINELIBC_PE_MACHINE overrides.
+	# a bare -DCMAKE_SYSTEM_PROCESSOR=... only lands in the cache — read it
+	# there first; system detection otherwise sets the plain variable.
+	set(_wineunix_pe_target "$CACHE{CMAKE_SYSTEM_PROCESSOR}")
+	if(NOT _wineunix_pe_target)
+		set(_wineunix_pe_target "${CMAKE_SYSTEM_PROCESSOR}")
+	endif()
+	string(TOLOWER "${_wineunix_pe_target}" _wineunix_pe_target)
+	if(_wineunix_pe_target MATCHES "^(aarch64|arm64)$")
+		set(_wineunix_pe_machine_default arm64)
+	elseif(_wineunix_pe_target MATCHES "^(x86_64|amd64)$")
+		set(_wineunix_pe_machine_default i386:x86-64)
+	elseif(_wineunix_pe_target MATCHES "^(i[3-6]86|x86)$")
+		set(_wineunix_pe_machine_default i386)
+	elseif(_wineunix_pe_target MATCHES "^arm64ec")
+		set(_wineunix_pe_machine_default arm64ec)
+	elseif(_wineunix_pe_target MATCHES "^arm")
+		set(_wineunix_pe_machine_default arm)
+	else()
+		set(_wineunix_pe_machine_default i386:x86-64)
+	endif()
+	set(WINELIBC_PE_MACHINE "${_wineunix_pe_machine_default}" CACHE STRING
+		"llvm-dlltool -m machine for the PE import lib (i386, i386:x86-64, arm, arm64, arm64ec)")
+
 	add_custom_command(OUTPUT ${CMAKE_BINARY_DIR}/libwineunix.a
-		COMMAND ${WINELIBC_DLLTOOL}
+		COMMAND ${WINELIBC_DLLTOOL} -m ${WINELIBC_PE_MACHINE}
 			-d ${CMAKE_CURRENT_SOURCE_DIR}/def/wineunix.def
 			-D wineunix.dll -l ${CMAKE_BINARY_DIR}/libwineunix.a
 		DEPENDS def/wineunix.def
-		COMMENT "import lib: libwineunix.a")
+		COMMENT "import lib: libwineunix.a (${WINELIBC_PE_MACHINE})")
 	add_custom_target(wineunix_import ALL DEPENDS ${CMAKE_BINARY_DIR}/libwineunix.a)
 endif()
 
