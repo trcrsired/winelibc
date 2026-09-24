@@ -74,6 +74,7 @@ extern "C"
 		__wine_unix_call_read,
 		__wine_unix_call_get_std_host_fd,
 		__wine_unix_call_at_fdcwd,
+		__wine_unix_call_open,
 		__wine_unix_call_funcs_count,
 	};
 
@@ -140,6 +141,15 @@ extern "C"
 		int which;                /* 0 stdin, 1 stdout, 2 stderr */
 		__wine_host_fd_t host_fd; /* output */
 	} __wine_unix_get_std_host_fd_params;
+
+	typedef struct
+	{
+		char const *filename;
+		size_t filenamelen;
+		__wine_host_flags_t flags;
+		__wine_host_mode_t mode;
+		__wine_host_fd_t host_fd; /* output */
+	} __wine_unix_open_params;
 
 	typedef struct
 	{
@@ -230,6 +240,15 @@ extern "C"
 
 	typedef struct
 	{
+		__wine_unix_ptr32_t filename;
+		__wine_unix_ptr32_t filenamelen;
+		__wine_unix_ptr32_t flags;
+		__wine_unix_ptr32_t mode;
+		__wine_unix_ptr32_t host_fd;
+	} __wine_unix_open_params32;
+
+	typedef struct
+	{
 		__wine_unix_ptr32_t host_fd;
 	} __wine_unix_at_fdcwd_params32;
 
@@ -254,6 +273,7 @@ extern "C"
 	typedef __wine_unix_preadwritev_params32 __wine_unix_preadwritev_params_t;
 	typedef __wine_unix_get_std_host_fd_params32 __wine_unix_get_std_host_fd_params_t;
 	typedef __wine_unix_at_fdcwd_params32 __wine_unix_at_fdcwd_params_t;
+	typedef __wine_unix_open_params32 __wine_unix_open_params_t;
 	typedef __wine_unix_readwrite_params32 __wine_unix_readwrite_params_t;
 #else
 typedef __wine_unix_host_fd_to_unix_fd_params __wine_unix_host_fd_to_unix_fd_params_t;
@@ -266,6 +286,7 @@ typedef __wine_unix_readwritev_params __wine_unix_readwritev_params_t;
 typedef __wine_unix_preadwritev_params __wine_unix_preadwritev_params_t;
 typedef __wine_unix_get_std_host_fd_params __wine_unix_get_std_host_fd_params_t;
 typedef __wine_unix_at_fdcwd_params __wine_unix_at_fdcwd_params_t;
+typedef __wine_unix_open_params __wine_unix_open_params_t;
 typedef __wine_unix_readwrite_params __wine_unix_readwrite_params_t;
 #endif
 

@@ -29,22 +29,22 @@ option(WINELIBC_FAST_IO_TEST "build the fast_io wine layer test (needs fast_io h
 # The PE side is compiled by a separate windows-targeting driver, not the
 # project compiler. Point these at whatever clang cfg you use.
 set(WINELIBC_PE_CXX "clang++" CACHE FILEPATH "PE-targeting C++ compiler driver")
-set(WINELIBC_PE_CXXFLAGS "--config=$ENV{HOME}/herbcfgs/x86_64-windows-msvc.cfg"
-	CACHE STRING "flags for the PE compiler (cmake list, -D;-I;--config=...)")
+set(WINELIBC_PE_CXXFLAGS "" CACHE STRING
+	"flags for the PE compiler (cmake list, -D;-I;--config=...)")
 set(WINELIBC_PE_LIBS "-lntdll" CACHE STRING "libraries for PE targets")
 set(WINELIBC_DLLTOOL "llvm-dlltool" CACHE FILEPATH "llvm-dlltool for import-lib generation")
 set(WINELIBC_WINE "wine" CACHE FILEPATH "wine binary for the check target")
-set(WINELIBC_FAST_IO_INCLUDE "${CMAKE_CURRENT_SOURCE_DIR}/../fast_io/include"
-	CACHE PATH "fast_io include dir for the fast_io wine layer test")
+set(WINELIBC_FAST_IO_INCLUDE "" CACHE PATH
+	"fast_io include dir for the fast_io wine layer test")
 
 if(NOT WINELIBC_WINEUNIX_IMPL MATCHES "^(bundled|unixcall|nt)$")
 	message(FATAL_ERROR "WINELIBC_WINEUNIX_IMPL must be bundled, unixcall or nt "
 		"(got '${WINELIBC_WINEUNIX_IMPL}')")
 endif()
 
-if(WINELIBC_FAST_IO_TEST AND NOT EXISTS "${WINELIBC_FAST_IO_INCLUDE}/fast_io.h")
-	message(WARNING "WINELIBC_FAST_IO_TEST is on but ${WINELIBC_FAST_IO_INCLUDE}/fast_io.h "
-		"does not exist; disabling (set WINELIBC_FAST_IO_INCLUDE)")
+if(WINELIBC_FAST_IO_TEST AND (NOT WINELIBC_FAST_IO_INCLUDE OR NOT EXISTS "${WINELIBC_FAST_IO_INCLUDE}/fast_io.h"))
+	message(WARNING "WINELIBC_FAST_IO_TEST is on but fast_io.h was not found under "
+		"'${WINELIBC_FAST_IO_INCLUDE}'; disabling (set WINELIBC_FAST_IO_INCLUDE)")
 	set(WINELIBC_FAST_IO_TEST OFF)
 endif()
 

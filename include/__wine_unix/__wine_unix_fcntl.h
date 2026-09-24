@@ -1,11 +1,11 @@
 #pragma once
 /*
-Host ABI flag values for the __wine_unix_openat unixcall.
+Wire flag values for the __wine_unix_openat unixcall.
 
-The unixcall ABI is defined in terms of the host's native open() flags, but the
-PE side cannot include host headers. The errno contract in __wine_unix_errno.h
-is already the linux errno set, so these are the linux (asm-generic) flag
-values; unixhost.cc static_asserts them against the real host values.
+The unixcall ABI needs flag values fixed across hosts, but the PE side cannot
+include host headers. The errno contract in __wine_unix_errno.h is already the
+linux errno set, so these are the linux x86-64 flag values; unixhost.cc
+translates them to the host's native open() flags bit by bit.
 */
 
 #define __WINE_UNIX_O_ACCMODE 3

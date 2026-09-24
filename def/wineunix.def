@@ -12,6 +12,7 @@ EXPORTS
     __wine_unix_nt_handle_to_host_fd_returns_status
     __wine_unix_nt_handle_to_host_fd_ref_returns_status
     __wine_unix_openat_returns_status
+    __wine_unix_open_returns_status
     __wine_unix_close_returns_status
     __wine_unix_writev_returns_status
     __wine_unix_readv_returns_status
@@ -27,6 +28,7 @@ EXPORTS
     __wine_unix_nt_handle_to_host_fd
     __wine_unix_nt_handle_to_host_fd_ref
     __wine_unix_openat
+    __wine_unix_open
     __wine_unix_close
     __wine_unix_writev
     __wine_unix_readv

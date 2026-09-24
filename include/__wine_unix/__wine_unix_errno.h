@@ -51,27 +51,27 @@ Referenced from Linux Kernel Header File
  */
 #define __WINE_UNIX_ERRNO_ENOSYS 38 /* Invalid system call number */
 
-#define __WINE_UNIX_ERRNO_ENOTEMPTY 39   /* Directory not empty */
-#define __WINE_UNIX_ERRNO_ELOOP 40       /* Too many symbolic links encountered */
-#define __WINE_UNIX_ERRNO_EWOULDBLOCK 41 /* Operation would block */
-#define __WINE_UNIX_ERRNO_ENOMSG 42      /* No message of desired type */
-#define __WINE_UNIX_ERRNO_EIDRM 43       /* Identifier removed */
-#define __WINE_UNIX_ERRNO_ECHRNG 44      /* Channel number out of range */
-#define __WINE_UNIX_ERRNO_EL2NSYNC 45    /* Level 2 not synchronized */
-#define __WINE_UNIX_ERRNO_EL3HLT 46      /* Level 3 halted */
-#define __WINE_UNIX_ERRNO_EL3RST 47      /* Level 3 reset */
-#define __WINE_UNIX_ERRNO_ELNRNG 48      /* Link number out of range */
-#define __WINE_UNIX_ERRNO_EUNATCH 49     /* Protocol driver not attached */
-#define __WINE_UNIX_ERRNO_ENOCSI 50      /* No CSI structure available */
-#define __WINE_UNIX_ERRNO_EL2HLT 51      /* Level 2 halted */
-#define __WINE_UNIX_ERRNO_EBADE 52       /* Invalid exchange */
-#define __WINE_UNIX_ERRNO_EBADR 53       /* Invalid request descriptor */
-#define __WINE_UNIX_ERRNO_EXFULL 54      /* Exchange full */
-#define __WINE_UNIX_ERRNO_ENOANO 55      /* No anode */
-#define __WINE_UNIX_ERRNO_EBADRQC 56     /* Invalid request code */
-#define __WINE_UNIX_ERRNO_EBADSLT 57     /* Invalid slot */
+#define __WINE_UNIX_ERRNO_ENOTEMPTY 39                         /* Directory not empty */
+#define __WINE_UNIX_ERRNO_ELOOP 40                             /* Too many symbolic links encountered */
+#define __WINE_UNIX_ERRNO_EWOULDBLOCK __WINE_UNIX_ERRNO_EAGAIN /* Operation would block */
+#define __WINE_UNIX_ERRNO_ENOMSG 42                            /* No message of desired type */
+#define __WINE_UNIX_ERRNO_EIDRM 43                             /* Identifier removed */
+#define __WINE_UNIX_ERRNO_ECHRNG 44                            /* Channel number out of range */
+#define __WINE_UNIX_ERRNO_EL2NSYNC 45                          /* Level 2 not synchronized */
+#define __WINE_UNIX_ERRNO_EL3HLT 46                            /* Level 3 halted */
+#define __WINE_UNIX_ERRNO_EL3RST 47                            /* Level 3 reset */
+#define __WINE_UNIX_ERRNO_ELNRNG 48                            /* Link number out of range */
+#define __WINE_UNIX_ERRNO_EUNATCH 49                           /* Protocol driver not attached */
+#define __WINE_UNIX_ERRNO_ENOCSI 50                            /* No CSI structure available */
+#define __WINE_UNIX_ERRNO_EL2HLT 51                            /* Level 2 halted */
+#define __WINE_UNIX_ERRNO_EBADE 52                             /* Invalid exchange */
+#define __WINE_UNIX_ERRNO_EBADR 53                             /* Invalid request descriptor */
+#define __WINE_UNIX_ERRNO_EXFULL 54                            /* Exchange full */
+#define __WINE_UNIX_ERRNO_ENOANO 55                            /* No anode */
+#define __WINE_UNIX_ERRNO_EBADRQC 56                           /* Invalid request code */
+#define __WINE_UNIX_ERRNO_EBADSLT 57                           /* Invalid slot */
 
-#define __WINE_UNIX_ERRNO_EDEADLOCK 58
+#define __WINE_UNIX_ERRNO_EDEADLOCK __WINE_UNIX_ERRNO_EDEADLK
 
 #define __WINE_UNIX_ERRNO_EBFONT 59          /* Bad font file format */
 #define __WINE_UNIX_ERRNO_ENOSTR 60          /* Device not a stream */
@@ -153,3 +153,5 @@ Referenced from Linux Kernel Header File
 #define __WINE_UNIX_ERRNO_ERFKILL 132 /* Operation not possible due to RF-kill */
 
 #define __WINE_UNIX_ERRNO_EHWPOISON 133 /* Memory page has hardware error */
+
+#define __WINE_UNIX_ERRNO_EFTYPE 134 /* Wrong file type for the intended operation */

@@ -192,6 +192,14 @@ extern "C"
 		return {call(__wine_unix_call_openat, &p), p.host_fd};
 	}
 
+	__WINE_UNIX_API __wine_unix_host_fd_status_t
+	__wine_unix_open_returns_status(char const *filename, size_t filenamelen,
+									__wine_host_flags_t flags, __wine_host_mode_t mode) noexcept
+	{
+		__wine_unix_open_params_t p{filename, filenamelen, flags, mode, 0};
+		return {call(__wine_unix_call_open, &p), p.host_fd};
+	}
+
 	__WINE_UNIX_API __wine_unix_status_t __wine_unix_close_returns_status(__wine_host_fd_t host_fd) noexcept
 	{
 		__wine_unix_close_params_t p{host_fd};
@@ -324,6 +332,18 @@ extern "C"
 														__wine_host_mode_t mode) return_failure{__wine_unix_errc}
 	{
 		auto const r{__wine_unix_openat_returns_status(host_dirfd, filename, filenamelen, flags, mode)};
+		if (r.status != __WINE_UNIX_ERRNO_SUCCESS)
+		{
+			return_failure static_cast<__wine_unix_errc>(r.status);
+		}
+		return r.host_fd;
+	}
+
+	__WINE_UNIX_API __wine_host_fd_t __wine_unix_open(char const *filename, size_t filenamelen,
+													  __wine_host_flags_t flags,
+													  __wine_host_mode_t mode) return_failure{__wine_unix_errc}
+	{
+		auto const r{__wine_unix_open_returns_status(filename, filenamelen, flags, mode)};
 		if (r.status != __WINE_UNIX_ERRNO_SUCCESS)
 		{
 			return_failure static_cast<__wine_unix_errc>(r.status);

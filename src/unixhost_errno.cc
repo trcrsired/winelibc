@@ -1,12 +1,13 @@
 /*
-non-linux host errno -> __WINE_UNIX_ERRNO_* mapping. Out-of-line so the big
-switch doesn't get inlined into every call site of unixhost.cc.
+host errno -> __WINE_UNIX_ERRNO_* mapping for every host whose errno numbers
+aren't guaranteed to be linux x86-64's. Out-of-line so the big switch doesn't
+get inlined into every call site of unixhost.cc.
 */
 #include "__wine_unix_abi.h"
 #include <__wine_unix/__wine_unix_errno.h>
 #include <errno.h>
 
-#if !defined(__linux__)
+#if !defined(__linux__) || !defined(__x86_64__)
 namespace __wine_unix
 {
 __wine_unix_status_t host_errno_to_wine_errno(int val) noexcept
@@ -142,6 +143,10 @@ __wine_unix_status_t host_errno_to_wine_errno(int val) noexcept
 #ifdef EFBIG
 	case EFBIG:
 		return __WINE_UNIX_ERRNO_EFBIG;
+#endif
+#ifdef EFTYPE
+	case EFTYPE:
+		return __WINE_UNIX_ERRNO_EFTYPE;
 #endif
 #ifdef EHOSTDOWN
 	case EHOSTDOWN:

@@ -451,6 +451,13 @@ __wine_unix_host_fd_status_t nt_openat(__wine_host_fd_t host_dirfd, char const *
 	return {__WINE_UNIX_ERRNO_SUCCESS, handle_to_host_fd(handle)};
 }
 
+/* plain open(): same as nt_openat with a cwd dirfd (host_dirfd == 0) */
+__wine_unix_host_fd_status_t nt_open(char const *filename, ::std::size_t filenamelen,
+									 __wine_host_flags_t flags, __wine_host_mode_t mode) noexcept
+{
+	return nt_openat(0, filename, filenamelen, flags, mode);
+}
+
 __wine_unix_status_t nt_close(__wine_host_fd_t host_fd) noexcept
 {
 	void *handle{};
@@ -810,6 +817,13 @@ extern "C"
 		return ::winelibc_nt::nt_openat(host_dirfd, filename, filenamelen, flags, mode);
 	}
 
+	__WINE_UNIX_API __wine_unix_host_fd_status_t
+	__wine_unix_open_returns_status(char const *filename, size_t filenamelen,
+									__wine_host_flags_t flags, __wine_host_mode_t mode) noexcept
+	{
+		return ::winelibc_nt::nt_open(filename, filenamelen, flags, mode);
+	}
+
 	__WINE_UNIX_API __wine_unix_status_t __wine_unix_close_returns_status(__wine_host_fd_t host_fd) noexcept
 	{
 		return ::winelibc_nt::nt_close(host_fd);
@@ -923,6 +937,18 @@ extern "C"
 														__wine_host_mode_t mode) return_failure{__wine_unix_errc}
 	{
 		auto const r{__wine_unix_openat_returns_status(host_dirfd, filename, filenamelen, flags, mode)};
+		if (r.status != __WINE_UNIX_ERRNO_SUCCESS)
+		{
+			return_failure static_cast<__wine_unix_errc>(r.status);
+		}
+		return r.host_fd;
+	}
+
+	__WINE_UNIX_API __wine_host_fd_t __wine_unix_open(char const *filename, size_t filenamelen,
+													  __wine_host_flags_t flags,
+													  __wine_host_mode_t mode) return_failure{__wine_unix_errc}
+	{
+		auto const r{__wine_unix_open_returns_status(filename, filenamelen, flags, mode)};
 		if (r.status != __WINE_UNIX_ERRNO_SUCCESS)
 		{
 			return_failure static_cast<__wine_unix_errc>(r.status);

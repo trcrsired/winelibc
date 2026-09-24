@@ -71,8 +71,8 @@ struct unix_peb
 
 namespace __wine_unix
 {
-#if defined(__linux__)
-/* linux errno values already match the ones in __wine_unix_errno.h */
+#if defined(__linux__) && defined(__x86_64__)
+/* linux x86-64 errno values already match the ones in __wine_unix_errno.h */
 inline __wine_unix_status_t host_errno_to_wine_errno(int val) noexcept
 {
 	return static_cast<__wine_unix_status_t>(val);
@@ -385,6 +385,154 @@ static __wine_unix_status_t unix_nt_handle_to_host_fd(void *args) noexcept
 	return __WINE_UNIX_ERRNO_SUCCESS;
 }
 
+/*
+__WINE_UNIX_O_* is the wire encoding — fixed x86-64 linux values, see
+__wine_unix_fcntl.h. Hosts renumber some of the bits (aarch64 moves
+O_DIRECT, O_LARGEFILE, O_DIRECTORY, O_NOFOLLOW and O_TMPFILE), so decode
+bit by bit; composites (__WINE_UNIX_O_SYNC, __WINE_UNIX_O_TMPFILE) fall
+out of the per-bit mapping. Bits the host lacks fail with EINVAL rather
+than silently dropping.
+*/
+inline __wine_unix_status_t wine_flags_to_host_open_flags(::std::uint_least64_t flags, int &host_flags) noexcept
+{
+	int fl{};
+	switch (flags & __WINE_UNIX_O_ACCMODE)
+	{
+	case __WINE_UNIX_O_RDONLY:
+		fl = O_RDONLY;
+		break;
+	case __WINE_UNIX_O_WRONLY:
+		fl = O_WRONLY;
+		break;
+	case __WINE_UNIX_O_RDWR:
+		fl = O_RDWR;
+		break;
+	default:
+		return __WINE_UNIX_ERRNO_EINVAL;
+	}
+	for (::std::uint_least64_t rest{flags & ~static_cast<::std::uint_least64_t>(__WINE_UNIX_O_ACCMODE)}; rest != 0;
+		 rest &= rest - 1)
+	{
+		switch (rest & (~rest + 1))
+		{
+		case __WINE_UNIX_O_CREAT:
+			fl |= O_CREAT;
+			break;
+		case __WINE_UNIX_O_EXCL:
+			fl |= O_EXCL;
+			break;
+		case __WINE_UNIX_O_NOCTTY:
+			fl |= O_NOCTTY;
+			break;
+		case __WINE_UNIX_O_TRUNC:
+			fl |= O_TRUNC;
+			break;
+		case __WINE_UNIX_O_APPEND:
+			fl |= O_APPEND;
+			break;
+		case __WINE_UNIX_O_NONBLOCK:
+			fl |= O_NONBLOCK;
+			break;
+		case __WINE_UNIX_O_DSYNC:
+#ifdef O_DSYNC
+			fl |= O_DSYNC;
+			break;
+#else
+			return __WINE_UNIX_ERRNO_EINVAL;
+#endif
+		case __WINE_UNIX_O_DIRECT:
+#ifdef O_DIRECT
+			fl |= O_DIRECT;
+			break;
+#else
+			return __WINE_UNIX_ERRNO_EINVAL;
+#endif
+		case __WINE_UNIX_O_LARGEFILE:
+#ifdef O_LARGEFILE
+			/* a no-op hint on 64-bit hosts; fine to drop where undefined */
+			fl |= O_LARGEFILE;
+#endif
+			break;
+		case __WINE_UNIX_O_DIRECTORY:
+#ifdef O_DIRECTORY
+			fl |= O_DIRECTORY;
+			break;
+#else
+			return __WINE_UNIX_ERRNO_EINVAL;
+#endif
+		case __WINE_UNIX_O_NOFOLLOW:
+#ifdef O_NOFOLLOW
+			fl |= O_NOFOLLOW;
+			break;
+#else
+			return __WINE_UNIX_ERRNO_EINVAL;
+#endif
+		case __WINE_UNIX_O_NOATIME:
+#ifdef O_NOATIME
+			fl |= O_NOATIME;
+			break;
+#else
+			return __WINE_UNIX_ERRNO_EINVAL;
+#endif
+		case __WINE_UNIX_O_CLOEXEC:
+#ifdef O_CLOEXEC
+			fl |= O_CLOEXEC;
+			break;
+#else
+			return __WINE_UNIX_ERRNO_EINVAL;
+#endif
+		case __WINE_UNIX_O_SYNC & ~__WINE_UNIX_O_DSYNC: /* the __O_SYNC bit */
+#if defined(O_SYNC) && defined(O_DSYNC)
+			fl |= O_SYNC & ~O_DSYNC;
+			break;
+#else
+			return __WINE_UNIX_ERRNO_EINVAL;
+#endif
+		case __WINE_UNIX_O_PATH:
+#ifdef O_PATH
+			fl |= O_PATH;
+			break;
+#else
+			return __WINE_UNIX_ERRNO_EINVAL;
+#endif
+		case __WINE_UNIX_O_TMPFILE & ~__WINE_UNIX_O_DIRECTORY: /* the __O_TMPFILE bit */
+#if defined(O_TMPFILE) && defined(O_DIRECTORY)
+			fl |= O_TMPFILE & ~O_DIRECTORY;
+			break;
+#else
+			return __WINE_UNIX_ERRNO_EINVAL;
+#endif
+		default:
+			return __WINE_UNIX_ERRNO_EINVAL;
+		}
+	}
+	host_flags = fl;
+	return __WINE_UNIX_ERRNO_SUCCESS;
+}
+
+static __wine_unix_status_t unix_open_common(int dirfd, char const *filename, size_t filenamelen,
+											 __wine_host_flags_t flags, __wine_host_mode_t mode,
+											 __wine_host_fd_t &out_host_fd) noexcept
+{
+	auto pathret{c_path_common(filename, filenamelen)};
+	if (pathret.host_errno)
+	{
+		return pathret.host_errno;
+	}
+	int host_flags{};
+	if (auto const errcode{wine_flags_to_host_open_flags(flags, host_flags)}; errcode)
+	{
+		return errcode;
+	}
+	int const unix_fd{::openat(dirfd, pathret.filename_c_str, host_flags, static_cast<mode_t>(mode))};
+	out_host_fd = unix_fd_to_host_fd(unix_fd);
+	if (unix_fd == -1)
+	{
+		return host_errno_to_wine_errno(errno);
+	}
+	return __WINE_UNIX_ERRNO_SUCCESS;
+}
+
 static __wine_unix_status_t unix_openat(void *args) noexcept
 {
 	auto *params{static_cast<__wine_unix_openat_params_t *>(args)};
@@ -397,20 +545,16 @@ static __wine_unix_status_t unix_openat(void *args) noexcept
 	{
 		return errcode;
 	}
-	auto pathret{c_path_common(reinterpret_cast<char const *>(reinterpret_cast<::std::uintptr_t>(params->filename)),
-							   static_cast<size_t>(params->filenamelen))};
-	if (pathret.host_errno)
-	{
-		return pathret.host_errno;
-	}
-	int const unix_fd{::openat(dirfd, pathret.filename_c_str, static_cast<int>(params->flags),
-							   static_cast<mode_t>(params->mode))};
-	params->host_fd = static_cast<decltype(params->host_fd)>(unix_fd_to_host_fd(unix_fd));
-	if (unix_fd == -1)
-	{
-		return host_errno_to_wine_errno(errno);
-	}
-	return __WINE_UNIX_ERRNO_SUCCESS;
+	return unix_open_common(dirfd, params->filename, static_cast<size_t>(params->filenamelen), params->flags,
+							params->mode, params->host_fd);
+}
+
+/* plain open(): relative paths resolve against cwd — saves the caller the at_fdcwd round trip */
+static __wine_unix_status_t unix_open(void *args) noexcept
+{
+	auto *params{static_cast<__wine_unix_open_params_t *>(args)};
+	return unix_open_common(AT_FDCWD, params->filename, static_cast<size_t>(params->filenamelen), params->flags,
+							params->mode, params->host_fd);
 }
 
 static __wine_unix_status_t unix_close(void *args) noexcept
@@ -735,6 +879,19 @@ static __wine_unix_status_t wow64_unix_at_fdcwd(void *args) noexcept
 	return __WINE_UNIX_ERRNO_SUCCESS;
 }
 
+static __wine_unix_status_t wow64_unix_open(void *args) noexcept
+{
+	auto *params32{static_cast<__wine_unix_open_params32 *>(args)};
+	__wine_unix_open_params params{};
+	params.filename = reinterpret_cast<char const *>(static_cast<::std::uintptr_t>(params32->filename));
+	params.filenamelen = params32->filenamelen;
+	params.flags = params32->flags;
+	params.mode = params32->mode;
+	auto const errcode{unix_open(&params)};
+	params32->host_fd = static_cast<__wine_unix_ptr32_t>(params.host_fd);
+	return errcode;
+}
+
 #endif // INTPTR_MAX >= INT64_MAX
 
 } // namespace
@@ -742,46 +899,9 @@ static __wine_unix_status_t wow64_unix_at_fdcwd(void *args) noexcept
 static_assert(sizeof(__wine_unix_iovec_t) == sizeof(struct iovec),
 			  "__wine_unix_iovec_t must match struct iovec layout");
 
-/* the PE side hardcodes these; they must match the host's real values */
-static_assert(__WINE_UNIX_O_RDONLY == O_RDONLY && __WINE_UNIX_O_WRONLY == O_WRONLY && __WINE_UNIX_O_RDWR == O_RDWR,
-			  "O_ACCMODE values do not match the host");
-static_assert(__WINE_UNIX_O_CREAT == O_CREAT && __WINE_UNIX_O_EXCL == O_EXCL && __WINE_UNIX_O_TRUNC == O_TRUNC &&
-				  __WINE_UNIX_O_APPEND == O_APPEND && __WINE_UNIX_O_NONBLOCK == O_NONBLOCK,
-			  "O_* values do not match the host");
-#ifdef O_NOCTTY
-static_assert(__WINE_UNIX_O_NOCTTY == O_NOCTTY);
-#endif
-#ifdef O_DSYNC
-static_assert(__WINE_UNIX_O_DSYNC == O_DSYNC);
-#endif
-#ifdef O_DIRECT
-static_assert(__WINE_UNIX_O_DIRECT == O_DIRECT);
-#endif
-#if defined(O_LARGEFILE) && O_LARGEFILE != 0
-/* glibc folds O_LARGEFILE to 0 on 64-bit hosts; the kernel ABI value is 0x8000 */
-static_assert(__WINE_UNIX_O_LARGEFILE == O_LARGEFILE);
-#endif
-#ifdef O_DIRECTORY
-static_assert(__WINE_UNIX_O_DIRECTORY == O_DIRECTORY);
-#endif
-#ifdef O_NOFOLLOW
-static_assert(__WINE_UNIX_O_NOFOLLOW == O_NOFOLLOW);
-#endif
-#ifdef O_NOATIME
-static_assert(__WINE_UNIX_O_NOATIME == O_NOATIME);
-#endif
-#ifdef O_CLOEXEC
-static_assert(__WINE_UNIX_O_CLOEXEC == O_CLOEXEC);
-#endif
-#ifdef O_SYNC
-static_assert(__WINE_UNIX_O_SYNC == O_SYNC);
-#endif
-#ifdef O_PATH
-static_assert(__WINE_UNIX_O_PATH == O_PATH);
-#endif
-#ifdef O_TMPFILE
-static_assert(__WINE_UNIX_O_TMPFILE == O_TMPFILE);
-#endif
+/* every decoded bit must have mapped onto a host value */
+static_assert((__WINE_UNIX_O_SYNC & ~__WINE_UNIX_O_DSYNC) != 0 && (__WINE_UNIX_O_TMPFILE & ~__WINE_UNIX_O_DIRECTORY) != 0,
+			  "composite __WINE_UNIX_O_* flags must decompose into single bits");
 
 } // namespace __wine_unix
 
@@ -802,6 +922,7 @@ extern "C"
 		::__wine_unix::unix_read,
 		::__wine_unix::unix_get_std_host_fd,
 		::__wine_unix::unix_at_fdcwd,
+		::__wine_unix::unix_open,
 	};
 
 #if INTPTR_MAX >= INT64_MAX
@@ -820,6 +941,7 @@ extern "C"
 		::__wine_unix::wow64_unix_read,
 		::__wine_unix::wow64_unix_get_std_host_fd,
 		::__wine_unix::wow64_unix_at_fdcwd,
+		::__wine_unix::wow64_unix_open,
 	};
 #endif
 

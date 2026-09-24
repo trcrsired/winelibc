@@ -161,6 +161,14 @@ typedef ptrdiff_t __wine_off_t;
 																				   size_t filenamelen,
 																				   __wine_host_flags_t flags,
 																				   __wine_host_mode_t mode) __WINE_UNIX_NOEXCEPT;
+	/*
+	plain open(): relative paths resolve against the cwd — same as openat
+	with the at_fdcwd token but without fetching the token first.
+	*/
+	__WINE_UNIX_API __wine_unix_host_fd_status_t __wine_unix_open_returns_status(char const *filename,
+																				 size_t filenamelen,
+																				 __wine_host_flags_t flags,
+																				 __wine_host_mode_t mode) __WINE_UNIX_NOEXCEPT;
 	__WINE_UNIX_API __wine_unix_status_t __wine_unix_close_returns_status(__wine_host_fd_t host_fd) __WINE_UNIX_NOEXCEPT;
 	__WINE_UNIX_API __wine_unix_rwv_status_t __wine_unix_writev_returns_status(__wine_host_fd_t host_fd,
 																			   __wine_unix_iovec_t const *iovs,
@@ -242,6 +250,9 @@ enum __wine_unix_errc : uint_least32_t
 	__WINE_UNIX_API __wine_host_fd_t __wine_unix_openat(__wine_host_fd_t host_dirfd, char const *filename,
 														size_t filenamelen, __wine_host_flags_t flags,
 														__wine_host_mode_t mode) return_failure { __WINE_UNIX_ERRC_T };
+	__WINE_UNIX_API __wine_host_fd_t __wine_unix_open(char const *filename, size_t filenamelen,
+													  __wine_host_flags_t flags,
+													  __wine_host_mode_t mode) return_failure { __WINE_UNIX_ERRC_T };
 	__WINE_UNIX_API void __wine_unix_close(__wine_host_fd_t host_fd) return_failure { __WINE_UNIX_ERRC_T };
 	__WINE_UNIX_API __wine_unix_rwv_result_t __wine_unix_writev(__wine_host_fd_t host_fd,
 																__wine_unix_iovec_t const *iovs,
