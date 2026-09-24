@@ -63,7 +63,8 @@ if(LIBWINEUNIX_UNIXLIB)
 	endif()
 	add_library(wineunix SHARED src/unixhost.cc src/unixhost_errno.cc)
 	set_target_properties(wineunix PROPERTIES
-		PREFIX "lib" CXX_STANDARD 20 CXX_STANDARD_REQUIRED ON
+		PREFIX "lib" SUFFIX ".so"
+		CXX_STANDARD 20 CXX_STANDARD_REQUIRED ON
 		POSITION_INDEPENDENT_CODE ON)
 	target_include_directories(wineunix PRIVATE include)
 	target_compile_definitions(wineunix PRIVATE WINE_UNIX_LIB=1)
