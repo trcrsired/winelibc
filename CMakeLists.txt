@@ -191,6 +191,15 @@ if(WINELIBC_WINEUNIX_DLL)
 endif()
 
 if(WINELIBC_IMPORT_LIB)
+	# the import lib ships under each windows linker's spelling —
+	# wineunix.lib (msvc/lld-link) and libwineunix.dll.a (mingw-w64) — in the
+	# windows-side lib dir, plus its plain name in the unix libdir.
 	install(FILES ${CMAKE_BINARY_DIR}/libwineunix.a
+		RENAME wineunix.lib
 		DESTINATION ${WINELIBC_INSTALL_WINDOWS_DIR}/lib)
+	install(FILES ${CMAKE_BINARY_DIR}/libwineunix.a
+		RENAME libwineunix.dll.a
+		DESTINATION ${WINELIBC_INSTALL_WINDOWS_DIR}/lib)
+	install(FILES ${CMAKE_BINARY_DIR}/libwineunix.a
+		DESTINATION ${WINELIBC_INSTALL_UNIX_DIR})
 endif()
