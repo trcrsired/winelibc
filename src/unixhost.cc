@@ -25,13 +25,16 @@ See dlls/ntdll/unix/virtual.c in the wine source.
 
 /*
 ntdll.so unix exports — wineserver-backed fd <-> HANDLE conversion. Resolved
-once by __wine_unix_lib_init — no DT_NEEDED and no wine libdir path needed.
-The handles they make live in the PE process's own handle table — unixlibs
-run inside it.
+once at .so load — no DT_NEEDED and no wine libdir path needed. The handles
+they make live in the PE process's own handle table — unixlibs run inside it.
 
 ntdll.so is already mapped (it dlopen'd us) but RTLD_LOCAL, so RTLD_DEFAULT
 cannot see its exports. dlopen by soname with RTLD_NOLOAD returns the handle
 of the already-loaded copy without pulling a second one.
+
+Wine's loader only calls __wine_unix_lib_init when the unixlib exports no
+__wine_unix_call_funcs, so it never runs here — the ELF constructor does the
+resolution instead; the exported init is kept for loaders that do call it.
 */
 using wine_server_fd_to_handle_t = unsigned int(int, unsigned int, unsigned int, void **) noexcept;
 using wine_server_handle_to_fd_t = unsigned int(void *, unsigned int, int *, unsigned int *) noexcept;
@@ -42,6 +45,26 @@ static wine_server_fd_to_handle_t *wine_server_fd_to_handle_p;
 static wine_server_handle_to_fd_t *wine_server_handle_to_fd_p;
 static rtl_get_current_peb_t *rtl_get_current_peb_p;
 static nt_compare_objects_t *nt_compare_objects_p;
+
+static void resolve_ntdll_symbols() noexcept
+{
+	if (void *const ntdll{::dlopen("ntdll.so", RTLD_NOW | RTLD_LOCAL | RTLD_NOLOAD)})
+	{
+		wine_server_fd_to_handle_p =
+			reinterpret_cast<wine_server_fd_to_handle_t *>(::dlsym(ntdll, "wine_server_fd_to_handle"));
+		wine_server_handle_to_fd_p =
+			reinterpret_cast<wine_server_handle_to_fd_t *>(::dlsym(ntdll, "wine_server_handle_to_fd"));
+		rtl_get_current_peb_p =
+			reinterpret_cast<rtl_get_current_peb_t *>(::dlsym(ntdll, "RtlGetCurrentPeb"));
+		nt_compare_objects_p =
+			reinterpret_cast<nt_compare_objects_t *>(::dlsym(ntdll, "NtCompareObjects"));
+	}
+}
+
+__attribute__((constructor)) static void wineunix_resolve_symbols() noexcept
+{
+	resolve_ntdll_symbols();
+}
 
 /* 64-bit PEB/RTL_USER_PROCESS_PARAMETERS headers — unix side is always 64-bit */
 struct unix_rtl_user_process_parameters
@@ -947,18 +970,7 @@ extern "C"
 
 	__wine_unix_status_t __wine_unix_lib_init(void) noexcept
 	{
-		/* resolve the wineserver conversion entry points once, at .so load */
-		if (void *const ntdll{::dlopen("ntdll.so", RTLD_NOW | RTLD_LOCAL | RTLD_NOLOAD)})
-		{
-			wine_server_fd_to_handle_p =
-				reinterpret_cast<wine_server_fd_to_handle_t *>(::dlsym(ntdll, "wine_server_fd_to_handle"));
-			wine_server_handle_to_fd_p =
-				reinterpret_cast<wine_server_handle_to_fd_t *>(::dlsym(ntdll, "wine_server_handle_to_fd"));
-			rtl_get_current_peb_p =
-				reinterpret_cast<rtl_get_current_peb_t *>(::dlsym(ntdll, "RtlGetCurrentPeb"));
-			nt_compare_objects_p =
-				reinterpret_cast<nt_compare_objects_t *>(::dlsym(ntdll, "NtCompareObjects"));
-		}
+		resolve_ntdll_symbols();
 		return __WINE_UNIX_ERRNO_SUCCESS;
 	}
 } // extern "C"
